@@ -1,0 +1,42 @@
+# others/k8s-manifests/namespaces.yaml
+# Kubernetes Namespaces
+
+---
+# Web Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: web
+  labels:
+    name: web
+    tier: frontend
+
+---
+# WAS Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: was
+  labels:
+    name: was
+    tier: backend
+
+---
+# Monitoring Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring
+    purpose: observability
+
+---
+# CI/CD Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cicd
+  labels:
+    name: cicd
+    purpose: automation

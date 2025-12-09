@@ -1,0 +1,130 @@
+# others/k8s-manifests/web/deployment.yaml
+# Web Tier (Nginx) Deployment
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-nginx
+  namespace: web
+  labels:
+    app: web-nginx
+    tier: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web-nginx
+  template:
+    metadata:
+      labels:
+        app: web-nginx
+        tier: web
+    spec:
+      # Node Selector: Web Tier 노드에만 배포
+      nodeSelector:
+        tier: web
+      
+      containers:
+      - name: nginx
+        # DockerHub 이미지 (여기를 수정하세요!)
+        image: nginx:1.25-alpine
+        
+        ports:
+        - containerPort: 80
+          name: http
+        
+        # Health Check
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        # 리소스 제한
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        
+        # Nginx 설정 파일 마운트
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d
+      
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-config
+---
+# Nginx ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: web
+data:
+  default.conf: |
+    upstream was_backend {
+      # WAS Service 주소
+      server was-service.was.svc.cluster.local:8080;
+    }
+    
+    server {
+      listen 80;
+      server_name _;
+      
+      # 접속 로그
+      access_log /var/log/nginx/access.log;
+      error_log /var/log/nginx/error.log;
+      
+      # 정적 파일 캐싱
+      location ~* \.(jpg|jpeg|png|gif|ico|css|js)$ {
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+      }
+      
+      # API 요청은 WAS로 프록시
+      location /api/ {
+        proxy_pass http://was_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # 타임아웃 설정
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+      }
+      
+      # Health Check 엔드포인트
+      location /health {
+        access_log off;
+        return 200 "OK\n";
+        add_header Content-Type text/plain;
+      }
+      
+      # 기본 요청도 WAS로
+      location / {
+        proxy_pass http://was_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+    }

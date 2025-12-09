@@ -1,0 +1,62 @@
+# others/docker/Dockerfile.was
+# Spring Boot WAS Dockerfile
+
+# Build Stage
+FROM maven:3.9-eclipse-temurin-17 AS builder
+
+WORKDIR /app
+
+# pom.xml 먼저 복사 (캐싱 최적화)
+COPY pom.xml .
+RUN mvn dependency:go-offline
+
+# 소스 코드 복사 및 빌드
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+# Runtime Stage
+FROM eclipse-temurin:17-jre-alpine
+
+# 메타데이터
+LABEL maintainer="your-email@example.com"
+LABEL description="PetClinic WAS Tier - Spring Boot"
+LABEL version="1.0"
+
+# 필요한 패키지 설치
+RUN apk add --no-cache \
+    curl \
+    bash \
+    tzdata
+
+# 타임존 설정
+ENV TZ=Asia/Seoul
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# 애플리케이션 사용자 생성
+RUN addgroup -g 1000 spring && \
+    adduser -D -u 1000 -G spring spring
+
+# 작업 디렉토리
+WORKDIR /app
+
+# JAR 파일 복사
+COPY --from=builder /app/target/*.jar app.jar
+
+# 소유권 변경
+RUN chown -R spring:spring /app
+
+# 애플리케이션 사용자로 전환
+USER spring
+
+# JVM 옵션
+ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+
+# Health Check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+# 포트 노출
+EXPOSE 8080
+
+# 실행
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
