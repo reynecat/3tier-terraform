@@ -173,29 +173,7 @@ output "deployment_summary" {
   Backup:
      - S3 Bucket: ${aws_s3_bucket.backup.id}
      - Lambda Sync: 5분 주기 자동 실행
-  
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  
-  다음 단계:
-  
-  1. Route53 네임서버 설정:
-     도메인 등록업체에서 다음 네임서버로 설정하세요:
-     ${join("\n     ", aws_route53_zone.main.name_servers)}
-  
-  2. EKS 클러스터 접속:
-     aws eks update-kubeconfig --region ${var.aws_region} --name eks-${var.environment}
-  
-  3. 애플리케이션 배포:
-     kubectl apply -f k8s-manifests/
-  
-  4. 데이터베이스 자격증명:
-     Username: ${var.db_username}
-     Password: (terraform output -raw 명령어로 확인)
-     terraform output -json db_credentials
-  
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  
-   참고: Azure DR 사이트를 활성화하려면 main.tf의 주석을 해제하세요.
+
   
   EOT
 }
