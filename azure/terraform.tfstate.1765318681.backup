@@ -1,7 +1,7 @@
 {
   "version": 4,
   "terraform_version": "1.14.1",
-  "serial": 44,
+  "serial": 34,
   "lineage": "c9400970-eaa2-1e95-8738-59e0f7cdcf8c",
   "outputs": {
     "appgw_public_ip": {
@@ -207,21 +207,21 @@
             "ssl_certificate": [],
             "ssl_policy": [
               {
-                "cipher_suites": [],
-                "disabled_protocols": [],
+                "cipher_suites": null,
+                "disabled_protocols": null,
                 "min_protocol_version": "",
                 "policy_name": "AppGwSslPolicy20220101",
                 "policy_type": "Predefined"
               }
             ],
             "ssl_profile": [],
-            "tags": {},
+            "tags": null,
             "timeouts": null,
             "trusted_client_certificate": [],
             "trusted_root_certificate": [],
             "url_path_map": [],
             "waf_configuration": [],
-            "zones": []
+            "zones": null
           },
           "sensitive_attributes": [],
           "identity_schema_version": 0,
@@ -405,7 +405,7 @@
           "schema_version": 0,
           "attributes": {
             "administrator_login": "mysqladmin",
-            "administrator_password": "SecurePassword123",
+            "administrator_password": null,
             "backup_retention_days": 7,
             "create_mode": null,
             "customer_managed_key": [],
@@ -437,15 +437,9 @@
             "tags": {},
             "timeouts": null,
             "version": "8.0.21",
-            "zone": ""
+            "zone": "3"
           },
           "sensitive_attributes": [
-            [
-              {
-                "type": "get_attr",
-                "value": "administrator_login"
-              }
-            ],
             [
               {
                 "type": "get_attr",
@@ -454,13 +448,7 @@
             ]
           ],
           "identity_schema_version": 0,
-          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjozNjAwMDAwMDAwMDAwLCJkZWxldGUiOjM2MDAwMDAwMDAwMDAsInJlYWQiOjMwMDAwMDAwMDAwMCwidXBkYXRlIjozNjAwMDAwMDAwMDAwfX0=",
-          "dependencies": [
-            "azurerm_resource_group.main",
-            "azurerm_subnet.db",
-            "azurerm_virtual_network.main"
-          ],
-          "create_before_destroy": true
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjozNjAwMDAwMDAwMDAwLCJkZWxldGUiOjM2MDAwMDAwMDAwMDAsInJlYWQiOjMwMDAwMDAwMDAwMCwidXBkYXRlIjozNjAwMDAwMDAwMDAwfSwic2NoZW1hX3ZlcnNpb24iOiIwIn0="
         }
       ]
     },
@@ -483,7 +471,7 @@
             "enable_ip_forwarding": false,
             "id": "/subscriptions/fdc2f63f-a7bc-4ac7-901a-c730f7d317e9/resourceGroups/rg-dr-prod/providers/Microsoft.Network/networkInterfaces/nic-was-prod",
             "internal_dns_name_label": "",
-            "internal_domain_name_suffix": "",
+            "internal_domain_name_suffix": "o3j2q5j1vmqeflmfuamxjyjjra.syx.internal.cloudapp.net",
             "ip_configuration": [
               {
                 "gateway_load_balancer_frontend_ip_configuration_id": "",
@@ -507,7 +495,7 @@
             "resource_group_name": "rg-dr-prod",
             "tags": {},
             "timeouts": null,
-            "virtual_machine_id": ""
+            "virtual_machine_id": "/subscriptions/fdc2f63f-a7bc-4ac7-901a-c730f7d317e9/resourceGroups/rg-dr-prod/providers/Microsoft.Compute/virtualMachines/vm-was-prod"
           },
           "sensitive_attributes": [],
           "identity_schema_version": 0,
@@ -877,8 +865,7 @@
           },
           "sensitive_attributes": [],
           "identity_schema_version": 0,
-          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjo1NDAwMDAwMDAwMDAwLCJkZWxldGUiOjU0MDAwMDAwMDAwMDAsInJlYWQiOjMwMDAwMDAwMDAwMCwidXBkYXRlIjo1NDAwMDAwMDAwMDAwfX0=",
-          "create_before_destroy": true
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjo1NDAwMDAwMDAwMDAwLCJkZWxldGUiOjU0MDAwMDAwMDAwMDAsInJlYWQiOjMwMDAwMDAwMDAwMCwidXBkYXRlIjo1NDAwMDAwMDAwMDAwfX0="
         }
       ]
     },
@@ -925,8 +912,8 @@
             "private_endpoint_network_policies_enabled": true,
             "private_link_service_network_policies_enabled": true,
             "resource_group_name": "rg-dr-prod",
-            "service_endpoint_policy_ids": [],
-            "service_endpoints": [],
+            "service_endpoint_policy_ids": null,
+            "service_endpoints": null,
             "timeouts": null,
             "virtual_network_name": "vnet-dr-prod"
           },
@@ -985,8 +972,7 @@
           "dependencies": [
             "azurerm_resource_group.main",
             "azurerm_virtual_network.main"
-          ],
-          "create_before_destroy": true
+          ]
         }
       ]
     },
@@ -1126,12 +1112,6 @@
             "resource_group_name": "rg-dr-prod",
             "subnet": [
               {
-                "address_prefix": "172.16.1.0/24",
-                "id": "/subscriptions/fdc2f63f-a7bc-4ac7-901a-c730f7d317e9/resourceGroups/rg-dr-prod/providers/Microsoft.Network/virtualNetworks/vnet-dr-prod/subnets/subnet-appgw",
-                "name": "subnet-appgw",
-                "security_group": ""
-              },
-              {
                 "address_prefix": "172.16.11.0/24",
                 "id": "/subscriptions/fdc2f63f-a7bc-4ac7-901a-c730f7d317e9/resourceGroups/rg-dr-prod/providers/Microsoft.Network/virtualNetworks/vnet-dr-prod/subnets/subnet-web",
                 "name": "subnet-web",
@@ -1164,8 +1144,7 @@
           "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjoxODAwMDAwMDAwMDAwLCJkZWxldGUiOjE4MDAwMDAwMDAwMDAsInJlYWQiOjMwMDAwMDAwMDAwMCwidXBkYXRlIjoxODAwMDAwMDAwMDAwfX0=",
           "dependencies": [
             "azurerm_resource_group.main"
-          ],
-          "create_before_destroy": true
+          ]
         }
       ]
     },
