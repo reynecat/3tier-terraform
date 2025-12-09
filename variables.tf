@@ -32,6 +32,12 @@ variable "aws_availability_zones" {
   default     = ["ap-northeast-2a", "ap-northeast-2c"]
 }
 
+
+variable "db_engine_version" {
+  description = "RDS MySQL engine version"
+  type        = string
+  default     = "8.0.35"
+}
 # ==================== Azure 변수 ====================
 
 variable "azure_region" {
