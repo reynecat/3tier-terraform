@@ -76,34 +76,27 @@ flowchart LR
         subgraph VNet["VNet 172.16.0.0/16"]
             direction LR
             
-            AppGW["Application Gateway"]
+            AppGW["Application Gateway<br/>Public IP"]
             
-            subgraph AZ_1["Availability Zone 1"]
-                direction TB
-                subgraph AKS_Subnet_1["AKS Subnet 172.16.11.0/24"]
-                    AKS_Node_1["AKS Worker Node<br/>Standard_B2s<br/>Replica: 1"]
-                    subgraph Pods_AZ1["Pods"]
-                        WEB_AZ1["Web Pod<br/>Nginx"]
-                        WAS_AZ1["WAS Pod<br/>Spring Boot"]
-                    end
-                end
-                subgraph MySQL_Subnet_1["MySQL Subnet 172.16.21.0/24"]
-                    MySQL_Primary["Azure MySQL 8.0<br/>Flexible Server<br/>Standby Mode"]
-                end
+            subgraph Web_Subnet_AZ["Web Subnet 172.16.11.0/24"]
+                Web_VM["Web VM<br/>Standard_B2s<br/>Nginx"]
             end
             
-            subgraph AZ_2["Availability Zone 2"]
-                direction TB
-                subgraph AKS_Subnet_2["AKS Subnet 172.16.12.0/24"]
-                    AKS_Node_2["AKS Worker Node<br/>Standard_B2s<br/>Replica: 1"]
-                end
-                subgraph MySQL_Subnet_2["MySQL Subnet 172.16.22.0/24"]
-                    MySQL_Standby["Azure MySQL 8.0<br/>HA Replica"]
-                end
+            subgraph WAS_Subnet_AZ["WAS Subnet 172.16.21.0/24"]
+                WAS_VM["WAS VM<br/>Standard_B2ms<br/>Spring Boot + Java 17"]
+            end
+            
+            subgraph DB_Subnet_AZ["DB Subnet 172.16.31.0/24"]
+                MySQL_Azure["Azure MySQL 8.0<br/>Flexible Server<br/>Zone Redundant HA"]
+            end
+            
+            subgraph Gateway_Subnet["Gateway Subnet 172.16.255.0/24"]
+                VPN_GW["VPN Gateway<br/>VpnGw1"]
             end
         end
         
         AzFunc["Azure Function<br/>DB Sync Handler"]
+        BlobStorage["Blob Storage<br/>Sync Data"]
     end
 
     %% ==================== Traffic Flow ====================
@@ -120,17 +113,17 @@ flowchart LR
     WAS_A & WAS_C --> RDS_Primary
     RDS_Primary <-->|"Sync Replication"| RDS_Standby
     
-    AppGW -.-> AKS_Node_1 & AKS_Node_2
-    AKS_Node_1 -.-> WEB_AZ1 -.-> WAS_AZ1
-    WAS_AZ1 -.-> MySQL_Primary
-    MySQL_Primary <-.->|"HA Sync"| MySQL_Standby
+    AppGW -.-> Web_VM -.-> WAS_VM
+    WAS_VM -.-> MySQL_Azure
     
     %% ==================== Data Sync Flow ====================
     RDS_Primary -->|"Incremental Backup"| Lambda
     Lambda -->|"Upload"| S3
     S3 <-->|"VPN Transfer"| VPN
-    VPN <-.-> AzFunc
-    AzFunc -.->|"Apply Data"| MySQL_Primary
+    VPN <-.-> VPN_GW
+    VPN_GW <-.-> BlobStorage
+    BlobStorage <-.-> AzFunc
+    AzFunc -.->|"Apply Data"| MySQL_Azure
     
     %% ==================== Monitoring ====================
     CW -.- EKS_Control
@@ -148,12 +141,12 @@ flowchart LR
     classDef eks fill:#FF9900,stroke:#232F3E,stroke-width:3px,color:#232F3E
     classDef pod fill:#326CE5,stroke:#232F3E,stroke-width:2px,color:#fff
 
-    class WEB_A,WEB_C,WAS_A,WAS_C,WEB_AZ1,WAS_AZ1 pod
+    class WEB_A,WEB_C,WAS_A,WAS_C pod
     class Web_Node_A,Web_Node_C,WAS_Node_A,WAS_Node_C,EKS_Control eks
     class EXT_ALB,AppGW alb
-    class RDS_Primary,RDS_Standby,MySQL_Primary,MySQL_Standby db
-    class S3 storage
+    class RDS_Primary,RDS_Standby,MySQL_Azure db
+    class S3,BlobStorage storage
     class VPN vpn
     class CW,R53 monitoring
-    class AKS_Node_1,AKS_Node_2,AzFunc azure
+    class Web_VM,WAS_VM,AzFunc,VPN_GW azure
     class Lambda,NAT aws
