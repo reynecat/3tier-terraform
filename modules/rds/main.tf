@@ -100,7 +100,6 @@ resource "aws_db_instance" "main" {
   identifier     = "rds-mysql-${var.environment}"
   engine         = "mysql"
   engine_version = "8.4.7"
-  auto_minor_version_upgrade = true
   instance_class = var.db_instance_class
   
   # 스토리지 설정

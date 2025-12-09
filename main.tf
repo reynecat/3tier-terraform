@@ -81,6 +81,7 @@ module "aws_eks" {
   source = "./modules/eks"
   
   vpc_id                  = module.aws_vpc.vpc_id
+  vpc_cidr        = module.aws_vpc.vpc_cidr
   web_subnets             = module.aws_vpc.web_subnets
   was_subnets             = module.aws_vpc.was_subnets
   private_subnets         = module.aws_vpc.private_subnets

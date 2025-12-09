@@ -5,6 +5,13 @@ variable "vpc_id" {
   type        = string
 }
 
+variable "vpc_cidr" {
+  description = "VPC cidr block"
+  type        = string
+}
+
+
+
 variable "web_subnets" {
   description = "Web Tier 서브넷 ID 리스트"
   type        = list(string)

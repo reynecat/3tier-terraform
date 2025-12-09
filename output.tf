@@ -5,6 +5,8 @@ output "aws_vpc_id" {
   value       = module.aws_vpc.vpc_id
 }
 
+
+
 output "aws_external_alb_dns" {
   description = "AWS External ALB DNS 이름"
   value       = module.aws_alb.external_alb_dns
