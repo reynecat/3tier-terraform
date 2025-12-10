@@ -55,8 +55,8 @@ resource "aws_lb" "main" {
   security_groups    = [aws_security_group.alb.id]
   subnets            = var.public_subnet_ids
 
-  enable_deletion_protection = var.deletion_protection
-  enable_http2              = true
+  enable_deletion_protection       = var.deletion_protection
+  enable_http2                     = true
   enable_cross_zone_load_balancing = true
 
   tags = {
@@ -97,7 +97,7 @@ resource "aws_lb_target_group" "web" {
 }
 
 # =================================================
-# Listener - HTTP (Redirect to HTTPS)
+# Listener - HTTP
 # =================================================
 
 resource "aws_lb_listener" "http" {
@@ -106,13 +106,20 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
-    type = "redirect"
-
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
+    type = var.enable_https ? "redirect" : "forward"
+    
+    # HTTPS 리다이렉트 (도메인 있을 때)
+    dynamic "redirect" {
+      for_each = var.enable_https ? [1] : []
+      content {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
     }
+    
+    # Target Group 포워딩 (도메인 없을 때)
+    target_group_arn = var.enable_https ? null : aws_lb_target_group.web.arn
   }
 }
 
@@ -128,23 +135,6 @@ resource "aws_lb_listener" "https" {
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
   certificate_arn   = var.certificate_arn
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.web.arn
-  }
-}
-
-# =================================================
-# HTTP 전용 Listener (도메인 없을 때)
-# =================================================
-
-resource "aws_lb_listener" "http_direct" {
-  count = var.enable_https ? 0 : 1
-
-  load_balancer_arn = aws_lb.main.arn
-  port              = "80"
-  protocol          = "HTTP"
 
   default_action {
     type             = "forward"

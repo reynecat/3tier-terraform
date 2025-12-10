@@ -13,17 +13,6 @@ output "vpc_cidr" {
   value       = module.vpc.vpc_cidr
 }
 
-# ========== ALB Outputs ==========
-
-output "alb_dns_name" {
-  description = "ALB DNS 이름"
-  value       = module.alb.alb_dns_name
-}
-
-output "alb_zone_id" {
-  description = "ALB Zone ID"
-  value       = module.alb.alb_zone_id
-}
 
 # ========== EKS Outputs ==========
 

@@ -24,7 +24,7 @@ azure_vpn_gateway_ip = "4.218.9.99"
 azure_vnet_cidr = "172.16.0.0/16"
 
 # VPN Shared Key (AWS와 Azure 동일해야 함)
-vpn_shared_key = "Va7fKsbnnsB5dJY4XgzDgMEzQc1YWd5L6t/8lH5txY0="
+vpn_shared_key = "MySecureVPNKey123456789012345678"
 
 # =================================================
 # 데이터베이스 설정

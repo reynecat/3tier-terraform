@@ -8,7 +8,7 @@ variable "environment" {
 variable "kubernetes_version" {
   description = "Kubernetes 버전"
   type        = string
-  default     = "1.28"
+  default     = "1.34"
 }
 
 variable "web_subnet_ids" {

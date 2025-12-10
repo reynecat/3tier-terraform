@@ -5,4 +5,6 @@ db_password    = "SecurePassword123!"
 
 # VPN 설정
 aws_vpn_gateway_ip = null  # 임시값
-vpn_shared_key     = "Va7fKsbnnsB5dJY4XgzDgMEzQc1YWd5L6t/8lH5txY0="
+vpn_shared_key     = "MySecureVPNKey123456789012345678"
+
+#Va7fKsbnnsB5dJY4XgzDgMEzQc1YWd5L6t/8lH5txY0=
