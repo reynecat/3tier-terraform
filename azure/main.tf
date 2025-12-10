@@ -47,6 +47,13 @@ resource "azurerm_virtual_network" "main" {
   resource_group_name = azurerm_resource_group.main.name
 }
 
+resource "azurerm_subnet" "appgw" {
+  name                 = "subnet-appgw"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = ["172.16.1.0/24"] 
+}
+
 # Gateway Subnet (VPN용)
 resource "azurerm_subnet" "gateway" {
   name                 = "GatewaySubnet"
@@ -294,6 +301,10 @@ resource "azurerm_mysql_flexible_server" "main" {
   storage {
     size_gb = 20
   }
+
+  lifecycle {
+    ignore_changes = [zone]
+  }
 }
 
 resource "azurerm_mysql_flexible_database" "main" {
@@ -405,7 +416,7 @@ resource "azurerm_application_gateway" "main" {
   
   gateway_ip_configuration {
     name      = "appgw-ip-config"
-    subnet_id = azurerm_subnet.web.id
+    subnet_id = azurerm_subnet.appgw.id
   }
   
   frontend_port {
