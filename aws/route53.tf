@@ -1,5 +1,5 @@
 # aws/route53.tf
-# Route 53 DNS 설정 (도메인 있을 때 / 없을 때 모두 지원)
+# Route 53 DNS 설정 - Ingress ALB 지원
 
 # =================================================
 # ACM 인증서 (HTTPS용, 도메인 있을 때만)
@@ -17,9 +17,39 @@ resource "aws_acm_certificate" "main" {
   }
   
   tags = {
-    Name = "${var.domain_name}-certificate"
+    Name        = "${var.domain_name}-certificate"
     Environment = var.environment
   }
+}
+
+# =================================================
+# Route 53 Hosted Zone (도메인 있을 때만 생성)
+# =================================================
+
+resource "aws_route53_zone" "main" {
+  count = var.enable_custom_domain && var.create_hosted_zone ? 1 : 0
+  
+  name    = var.domain_name
+  comment = "Managed by Terraform for ${var.environment}"
+  
+  tags = {
+    Name        = "${var.domain_name}-zone"
+    Environment = var.environment
+  }
+}
+
+# 기존 Hosted Zone 참조
+data "aws_route53_zone" "existing" {
+  count = var.enable_custom_domain && !var.create_hosted_zone ? 1 : 0
+  
+  name         = var.domain_name
+  private_zone = false
+}
+
+locals {
+  hosted_zone_id = var.enable_custom_domain ? (
+    var.create_hosted_zone ? aws_route53_zone.main[0].zone_id : data.aws_route53_zone.existing[0].zone_id
+  ) : null
 }
 
 # DNS 검증 레코드 생성
@@ -49,110 +79,15 @@ resource "aws_acm_certificate_validation" "main" {
 }
 
 # =================================================
-# Route 53 Hosted Zone (도메인 있을 때만 생성)
+# Ingress ALB를 위한 안내 (실제 DNS는 Kubernetes에서 관리)
 # =================================================
 
-resource "aws_route53_zone" "main" {
-  count = var.enable_custom_domain && var.create_hosted_zone ? 1 : 0
-  
-  name    = var.domain_name
-  comment = "Managed by Terraform for ${var.environment}"
-  
-  tags = {
-    Name        = "${var.domain_name}-zone"
-    Environment = var.environment
-  }
-}
+# Ingress Controller가 생성하는 ALB의 DNS를 Route 53에 연결하려면
+# Kubernetes Ingress 매니페스트에 external-dns 어노테이션을 추가하거나
+# 수동으로 CNAME 레코드를 생성해야 합니다
 
-# 기존 Hosted Zone 참조 (도메인은 있지만 Zone은 이미 생성된 경우)
-data "aws_route53_zone" "existing" {
-  count = var.enable_custom_domain && !var.create_hosted_zone ? 1 : 0
-  
-  name         = var.domain_name
-  private_zone = false
-}
-
-# =================================================
-# ALB에 대한 DNS A 레코드 (도메인 있을 때)
-# =================================================
-
-locals {
-  hosted_zone_id = var.enable_custom_domain ? (
-    var.create_hosted_zone ? aws_route53_zone.main[0].zone_id : data.aws_route53_zone.existing[0].zone_id
-  ) : null
-}
-
-resource "aws_route53_record" "alb" {
-  count = var.enable_custom_domain ? 1 : 0
-  
-  zone_id = local.hosted_zone_id
-  name    = var.domain_name
-  type    = "A"
-  
-  alias {
-    name                   = module.alb.alb_dns_name
-    zone_id                = module.alb.alb_zone_id
-    evaluate_target_health = true
-  }
-}
-
-# www 서브도메인도 추가 (선택사항)
-resource "aws_route53_record" "www" {
-  count = var.enable_custom_domain ? 1 : 0
-  
-  zone_id = local.hosted_zone_id
-  name    = "www.${var.domain_name}"
-  type    = "A"
-  
-  alias {
-    name                   = module.alb.alb_dns_name
-    zone_id                = module.alb.alb_zone_id
-    evaluate_target_health = true
-  }
-}
-
-# =================================================
-# Health Check (도메인 있을 때만)
-# =================================================
-
-resource "aws_route53_health_check" "alb" {
-  count = var.enable_custom_domain ? 1 : 0
-  
-  type              = "HTTPS_STR_MATCH"
-  resource_path     = "/actuator/health"
-  fqdn              = module.alb.alb_dns_name
-  port              = 443
-  failure_threshold = 3
-  request_interval  = 30
-  measure_latency   = true
-  search_string     = "UP"
-  
-  tags = {
-    Name = "${var.environment}-alb-health-check"
-  }
-}
-
-# =================================================
-# CloudWatch Alarm for Health Check
-# =================================================
-
-resource "aws_cloudwatch_metric_alarm" "health_check" {
-  count = var.enable_custom_domain ? 1 : 0
-  
-  alarm_name          = "${var.environment}-route53-health-alarm"
-  comparison_operator = "LessThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "HealthCheckStatus"
-  namespace           = "AWS/Route53"
-  period              = "60"
-  statistic           = "Minimum"
-  threshold           = "1"
-  alarm_description   = "This metric monitors Route53 health check status"
-  
-  dimensions = {
-    HealthCheckId = var.enable_custom_domain ? aws_route53_health_check.alb[0].id : ""
-  }
-}
+# external-dns 설치 방법:
+# https://github.com/kubernetes-sigs/external-dns
 
 # =================================================
 # Outputs
@@ -165,31 +100,56 @@ output "route53_nameservers" {
   ) : []
 }
 
-output "application_url" {
-  description = "애플리케이션 접속 URL"
-  value = var.enable_custom_domain ? (
-    "https://${var.domain_name}"
-  ) : (
-    "http://${module.alb.alb_dns_name}"
-  )
+output "hosted_zone_id" {
+  description = "Route 53 Hosted Zone ID"
+  value       = local.hosted_zone_id
 }
 
-output "alb_dns_name" {
-  description = "ALB DNS 이름 (도메인 없을 때 직접 사용)"
-  value       = module.alb.alb_dns_name
+output "acm_certificate_arn" {
+  description = "ACM 인증서 ARN (HTTPS용)"
+  value       = var.enable_custom_domain ? aws_acm_certificate.main[0].arn : null
 }
-
-# =================================================
-# 안내 메시지 출력
-# =================================================
 
 output "setup_instructions" {
-  description = "도메인 설정 안내"
+  description = "DNS 설정 안내"
   value = var.enable_custom_domain ? (
     var.create_hosted_zone ? 
-    "✅ Route 53 Hosted Zone이 생성되었습니다.\n아래 네임서버를 도메인 등록업체(가비아, 후이즈 등)에 설정하세요:\n${join("\n", aws_route53_zone.main[0].name_servers)}" :
-    "✅ 기존 Hosted Zone을 사용합니다.\nDNS 레코드가 자동으로 생성되었습니다."
+    <<-EOT
+    ✅ Route 53 Hosted Zone이 생성되었습니다.
+    
+    1. 도메인 등록업체에서 네임서버를 다음으로 변경하세요:
+    ${join("\n    ", aws_route53_zone.main[0].name_servers)}
+    
+    2. Kubernetes Ingress ALB가 생성되면:
+       - ALB DNS: k8s-xxx-xxx.elb.amazonaws.com
+       - Route 53에 CNAME 레코드 추가:
+         * 이름: ${var.domain_name}
+         * 타입: CNAME
+         * 값: [Ingress ALB DNS]
+    
+    3. 또는 external-dns를 사용하여 자동화:
+       helm install external-dns ...
+    EOT
+    :
+    <<-EOT
+    ✅ 기존 Hosted Zone을 사용합니다.
+    
+    Kubernetes Ingress ALB 생성 후:
+    1. ALB DNS 확인: kubectl get ingress -n web
+    2. Route 53에 CNAME 레코드 추가
+    EOT
   ) : (
-    "ℹ️  도메인 없이 ALB URL로 접속합니다.\n접속 주소: http://${module.alb.alb_dns_name}\n\n나중에 도메인을 추가하려면:\n1. terraform.tfvars에서 enable_custom_domain = true\n2. domain_name = \"example.com\" 설정\n3. terraform apply 실행"
+    <<-EOT
+    ℹ️  도메인 설정이 비활성화되어 있습니다.
+    
+    현재 접속 방법:
+    - Kubernetes Ingress ALB DNS로 직접 접속
+    - kubectl get ingress -n web 명령어로 확인
+    
+    도메인을 추가하려면:
+    1. terraform.tfvars에서 enable_custom_domain = true
+    2. domain_name = "example.com" 설정
+    3. terraform apply 실행
+    EOT
   )
 }
