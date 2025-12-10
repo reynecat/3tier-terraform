@@ -391,6 +391,11 @@ resource "azurerm_application_gateway" "main" {
   name                = "appgw-${var.environment}"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
+
+  ssl_policy {
+    policy_type = "Predefined"
+    policy_name = "AppGwSslPolicy20220101"
+  }
   
   sku {
     name     = "Standard_v2"
