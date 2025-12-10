@@ -1,6 +1,58 @@
 # others/k8s-manifests/web/deployment.yaml
 # Web Tier (Nginx) Deployment
 
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: web
+data:
+  default.conf: |
+    upstream was_backend {
+        server was-service.was.svc.cluster.local:8080;
+        keepalive 32;
+    }
+    
+    server {
+        listen 80;
+        server_name _;
+        
+        # 접속 로그
+        access_log /var/log/nginx/access.log;
+        error_log /var/log/nginx/error.log;
+        
+        # Health Check 엔드포인트 (Nginx 자체)
+        location /health {
+            access_log off;
+            return 200 "OK\n";
+            add_header Content-Type text/plain;
+        }
+        
+        # 모든 요청을 WAS로 프록시 (정적 파일 포함)
+        location / {
+            proxy_pass http://was_backend;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # 타임아웃 설정
+            proxy_connect_timeout 60s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+            
+            # 버퍼 설정
+            proxy_buffering on;
+            proxy_buffer_size 4k;
+            proxy_buffers 8 4k;
+            proxy_busy_buffers_size 8k;
+            
+            # HTTP/1.1 및 Keep-Alive 지원
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+        }
+    }
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,117 +66,68 @@ spec:
   selector:
     matchLabels:
       app: web-nginx
+      tier: web
   template:
     metadata:
       labels:
         app: web-nginx
         tier: web
     spec:
-      # Node Selector: Web Tier 노드에만 배포
-      nodeSelector:
-        tier: web
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: tier
+                operator: In
+                values:
+                - web
       
       containers:
       - name: nginx
-        # DockerHub 이미지 (여기를 수정하세요!)
         image: nginx:1.25-alpine
+        imagePullPolicy: IfNotPresent
         
         ports:
         - containerPort: 80
           name: http
+          protocol: TCP
         
-        # Health Check
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
+        # Nginx 설정 파일 마운트
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: default.conf
         
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 5
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
-        
-        # 리소스 제한
         resources:
           requests:
             cpu: 100m
             memory: 128Mi
           limits:
-            cpu: 500m
-            memory: 512Mi
+            cpu: 200m
+            memory: 256Mi
         
-        # Nginx 설정 파일 마운트
-        volumeMounts:
-        - name: nginx-config
-          mountPath: /etc/nginx/conf.d
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
       
       volumes:
       - name: nginx-config
         configMap:
           name: nginx-config
----
-# Nginx ConfigMap
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: nginx-config
-  namespace: web
-data:
-  default.conf: |
-    upstream was_backend {
-      # WAS Service 주소
-      server was-service.was.svc.cluster.local:8080;
-    }
-    
-    server {
-      listen 80;
-      server_name _;
       
-      # 접속 로그
-      access_log /var/log/nginx/access.log;
-      error_log /var/log/nginx/error.log;
-      
-      # 정적 파일 캐싱
-      location ~* \.(jpg|jpeg|png|gif|ico|css|js)$ {
-        expires 7d;
-        add_header Cache-Control "public, immutable";
-      }
-      
-      # API 요청은 WAS로 프록시
-      location /api/ {
-        proxy_pass http://was_backend;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # 타임아웃 설정
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-      }
-      
-      # Health Check 엔드포인트
-      location /health {
-        access_log off;
-        return 200 "OK\n";
-        add_header Content-Type text/plain;
-      }
-      
-      # 기본 요청도 WAS로
-      location / {
-        proxy_pass http://was_backend;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-      }
-    }
+      terminationGracePeriodSeconds: 30
