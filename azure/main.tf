@@ -32,10 +32,6 @@ resource "azurerm_resource_group" "main" {
     Environment = var.environment
     Purpose     = "DR-Site"
   }
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 # ========== Virtual Network ==========
