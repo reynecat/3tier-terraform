@@ -18,7 +18,7 @@ create_hosted_zone   = false
 # =================================================
 
 # Azure VPN Gateway Public IP (현재 값 유지)
-azure_vpn_gateway_ip = "20.214.241.61"
+azure_vpn_gateway_ip = "1.1.1.1"
 
 # Azure VNet CIDR
 azure_vnet_cidr = "172.16.0.0/16"
@@ -54,7 +54,7 @@ rds_subnet_cidrs    = ["10.0.31.0/24", "10.0.32.0/24"]
 # EKS 노드 설정
 # =================================================
 
-eks_node_instance_type = "t3.medium"
+eks_node_instance_type = "t3.small"
 
 # Web Tier
 eks_web_desired_size = 2
