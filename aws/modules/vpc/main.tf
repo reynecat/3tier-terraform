@@ -58,8 +58,6 @@ resource "aws_subnet" "public" {
     Environment = var.environment
     Type        = "Public"
   }
-
-  depends_on = [aws_internet_gateway_attachment.main]
 }
 
 # =================================================
