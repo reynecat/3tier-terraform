@@ -18,7 +18,7 @@ create_hosted_zone   = false
 # =================================================
 
 # Azure VPN Gateway Public IP (현재 값 유지)
-azure_vpn_gateway_ip = "4.218.9.99"
+azure_vpn_gateway_ip = "20.214.241.61"
 
 # Azure VNet CIDR
 azure_vnet_cidr = "172.16.0.0/16"
