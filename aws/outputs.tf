@@ -15,14 +15,14 @@ output "vpc_cidr" {
 
 # ========== ALB Outputs ==========
 
-output "external_alb_dns" {
-  description = "External ALB DNS 이름"
-  value       = module.alb.external_alb_dns
+output "alb_dns_name" {
+  description = "ALB DNS 이름"
+  value       = module.alb.alb_dns_name
 }
 
-output "external_alb_zone_id" {
-  description = "External ALB Zone ID"
-  value       = module.alb.external_alb_zone_id
+output "alb_zone_id" {
+  description = "ALB Zone ID"
+  value       = module.alb.alb_zone_id
 }
 
 # ========== EKS Outputs ==========
@@ -43,16 +43,17 @@ output "eks_cluster_certificate_authority_data" {
   sensitive   = true
 }
 
-output "load_balancer_controller_role_arn" {
-  description = "AWS Load Balancer Controller IAM Role ARN"
-  value       = module.eks.load_balancer_controller_role_arn
-}
-
 # ========== RDS Outputs ==========
 
 output "rds_endpoint" {
   description = "RDS 엔드포인트"
-  value       = module.rds.db_endpoint
+  value       = module.rds.db_instance_endpoint
+  sensitive   = true
+}
+
+output "rds_address" {
+  description = "RDS 주소"
+  value       = module.rds.db_instance_address
   sensitive   = true
 }
 
@@ -111,7 +112,6 @@ output "eks_update_kubeconfig_command" {
 
 output "deployment_summary" {
   description = "AWS Primary Site 배포 요약"
-  sensitive   = true
   value = <<-EOT
   
   ╔═══════════════════════════════════════════════════════════╗
@@ -122,11 +122,10 @@ output "deployment_summary" {
   
   Network:
     - VPC CIDR: ${module.vpc.vpc_cidr}
-    - NAT Gateway IP: ${module.vpc.nat_gateway_ip}
   
   Load Balancer:
-    - External ALB: ${module.alb.external_alb_dns}
-    - Access URL: http://${module.alb.external_alb_dns}
+    - ALB DNS: ${module.alb.alb_dns_name}
+    - Access URL: http://${module.alb.alb_dns_name}
   
   EKS Cluster:
     - Name: ${module.eks.cluster_name}
@@ -134,7 +133,7 @@ output "deployment_summary" {
     - Connect: aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}
   
   Database:
-    - RDS Endpoint: ${module.rds.db_endpoint}
+    - RDS Endpoint: ${module.rds.db_instance_endpoint}
     - Database: ${module.rds.db_name}
   
   Backup:
@@ -145,12 +144,11 @@ output "deployment_summary" {
     - Tunnel 1 IP: ${aws_vpn_connection.azure.tunnel1_address}
     - Tunnel 2 IP: ${aws_vpn_connection.azure.tunnel2_address}
     - Connected to: Azure VNet ${var.azure_vnet_cidr}
-    - Status: aws ec2 describe-vpn-connections --vpn-connection-ids ${aws_vpn_connection.azure.id}
   
   Next Steps:
     1. EKS 클러스터 접속: aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}
-    2. 애플리케이션 배포: cd ../others/scripts && ./deploy-eks-app.sh
-    3. 접속 확인: http://${module.alb.external_alb_dns}
+    2. Azure에 VPN IP 입력: ${aws_vpn_connection.azure.tunnel1_address}
+    3. Azure 배포: cd ../azure && terraform apply
   
   EOT
 }

@@ -205,18 +205,18 @@ resource "aws_vpn_connection" "azure" {
   tunnel1_ike_versions                 = ["ikev2"]
   tunnel1_phase1_dh_group_numbers      = [2]
   tunnel1_phase1_encryption_algorithms = ["AES256"]
-  tunnel1_phase1_integrity_algorithms  = ["SHA256"]
+  tunnel1_phase1_integrity_algorithms  = ["SHA-256"]
   tunnel1_phase2_dh_group_numbers      = [2]
   tunnel1_phase2_encryption_algorithms = ["AES256"]
-  tunnel1_phase2_integrity_algorithms  = ["SHA256"]
+  tunnel1_phase2_integrity_algorithms  = ["SHA-256"]
   
   tunnel2_ike_versions                 = ["ikev2"]
   tunnel2_phase1_dh_group_numbers      = [2]
   tunnel2_phase1_encryption_algorithms = ["AES256"]
-  tunnel2_phase1_integrity_algorithms  = ["SHA256"]
+  tunnel2_phase1_integrity_algorithms  = ["SHA-256"]
   tunnel2_phase2_dh_group_numbers      = [2]
   tunnel2_phase2_encryption_algorithms = ["AES256"]
-  tunnel2_phase2_integrity_algorithms  = ["SHA256"]
+  tunnel2_phase2_integrity_algorithms  = ["SHA-256"]
   
   tags = {
     Name = "vpn-to-azure-${var.environment}"
@@ -229,11 +229,13 @@ resource "aws_vpn_connection_route" "azure" {
   vpn_connection_id      = aws_vpn_connection.azure.id
 }
 
+/*
 # VPN Gateway Route Propagation
 resource "aws_vpn_gateway_route_propagation" "private" {
   vpn_gateway_id = aws_vpn_gateway.main.id
   route_table_id = module.vpc.private_route_table_id
 }
+*/
 
 # =================================================
 # 데이터 소스
