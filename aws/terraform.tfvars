@@ -83,3 +83,10 @@ rds_skip_final_snapshot   = true   # 테스트를 위해 true
 # =================================================
 
 budget_alert_email = "reyne7055@gmail.com"
+
+
+# dms를 위한 변수들
+
+azure_mysql_private_ip  = "172.20.0.10"
+azure_mysql_username    = "mysqladmin"
+azure_mysql_password    = "MyNewPassword123!" 

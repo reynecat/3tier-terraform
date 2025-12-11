@@ -219,3 +219,24 @@ variable "enable_cost_optimization" {
   type        = bool
   default     = true
 }
+
+
+# dms를 위한 변수들
+
+
+variable "azure_mysql_private_ip" {
+  description = "Azure MySQL Flexible Server Private IP"
+  type        = string
+}
+
+variable "azure_mysql_username" {
+  description = "Azure MySQL admin username"
+  type        = string
+  default     = "mysqladmin"
+}
+
+variable "azure_mysql_password" {
+  description = "Azure MySQL admin password"
+  type        = string
+  sensitive   = true
+}
