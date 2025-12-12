@@ -213,6 +213,10 @@ resource "azurerm_linux_virtual_machine" "web" {
   network_interface_ids = [
     azurerm_network_interface.web.id
   ]
+
+  depends_on = [
+    azurerm_network_interface.web
+  ]
   
   admin_ssh_key {
     username   = var.admin_username
@@ -459,4 +463,8 @@ resource "azurerm_network_interface_application_gateway_backend_address_pool_ass
   network_interface_id    = azurerm_network_interface.web.id
   ip_configuration_name   = "internal"
   backend_address_pool_id = tolist(azurerm_application_gateway.main.backend_address_pool).0.id
+
+  depends_on = [
+    azurerm_linux_virtual_machine.web
+  ]
 }
