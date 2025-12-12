@@ -1,5 +1,5 @@
 # azure/main.tf
-# Azure DR Site - VM 기반 구성 (AKS 제외)
+# Azure DR Site - 유지보수 페이지 전용 구성
 
 terraform {
   required_providers {
@@ -30,7 +30,8 @@ resource "azurerm_resource_group" "main" {
   
   tags = {
     Environment = var.environment
-    Purpose     = "DR-Site"
+    Purpose     = "DR-Site-Maintenance"
+    Mode        = "Warm-Standby"
   }
 }
 
@@ -74,7 +75,7 @@ resource "azurerm_subnet" "was" {
   address_prefixes     = ["172.16.21.0/24"]
 }
 
-# DB Subnet
+# DB Subnet (MySQL 보존용)
 resource "azurerm_subnet" "db" {
   name                 = "subnet-db"
   resource_group_name  = azurerm_resource_group.main.name
@@ -203,7 +204,7 @@ resource "azurerm_network_interface" "was" {
 
 # ========== Virtual Machines ==========
 
-# Web VM (Nginx)
+# Web VM (유지보수 페이지)
 resource "azurerm_linux_virtual_machine" "web" {
   name                = "vm-web-${var.environment}"
   location            = azurerm_resource_group.main.location
@@ -240,7 +241,7 @@ resource "azurerm_linux_virtual_machine" "web" {
   }))
 }
 
-# WAS VM (Spring Boot)
+# WAS VM (유지보수 API 서버)
 resource "azurerm_linux_virtual_machine" "was" {
   name                = "vm-was-${var.environment}"
   location            = azurerm_resource_group.main.location
@@ -268,20 +269,11 @@ resource "azurerm_linux_virtual_machine" "was" {
     version   = "latest"
   }
   
-  custom_data = base64encode(templatefile("${path.module}/scripts/was-init.sh", {
-    db_host     = azurerm_mysql_flexible_server.main.fqdn
-    db_name     = var.db_name
-    db_username = var.db_username
-    db_password = var.db_password
-  }))
+  # 유지보수 API 서버만 실행 (DB 연결 없음)
+  custom_data = base64encode(file("${path.module}/scripts/was-init.sh"))
 }
 
-# ========== MySQL Flexible Server ==========
-
-resource "random_password" "mysql" {
-  length  = 16
-  special = true
-}
+# ========== MySQL Flexible Server (데이터 보존용) ==========
 
 resource "azurerm_mysql_flexible_server" "main" {
   name                   = "mysql-dr-${var.environment}"

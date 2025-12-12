@@ -1,6 +1,6 @@
 #!/bin/bash
 # azure/scripts/was-init.sh
-# WAS VM 초기화 스크립트 (Spring Boot)
+# WAS VM 초기화 스크립트 (유지보수 API 서버)
 
 set -e
 
@@ -9,60 +9,70 @@ LOG_FILE="/var/log/was-init.log"
 exec > >(tee -a $LOG_FILE)
 exec 2>&1
 
-echo "=== WAS VM 초기화 시작 ==="
+echo "=== WAS VM 초기화 시작 (유지보수 모드) ==="
 date
 
-# DB 연결 정보
-DB_HOST="${db_host}"
-DB_NAME="${db_name}"
-DB_USERNAME="${db_username}"
-DB_PASSWORD="${db_password}"
-
 # 시스템 업데이트
-echo "[1/6] 시스템 패키지 업데이트..."
+echo "[1/3] 시스템 패키지 업데이트..."
 apt-get update
 apt-get upgrade -y
 
-# Java 설치
-echo "[2/6] OpenJDK 17 설치..."
-apt-get install -y openjdk-17-jdk wget
+# Python3 및 Flask 설치
+echo "[2/3] Python3 및 Flask 설치..."
+apt-get install -y python3 python3-pip
+pip3 install flask
 
-# MySQL Client 설치
-echo "[3/6] MySQL Client 설치..."
-apt-get install -y mysql-client
+# 유지보수 API 서버 디렉토리 생성
+echo "[3/3] 유지보수 API 서버 생성..."
+mkdir -p /opt/maintenance
+cd /opt/maintenance
 
-# 애플리케이션 디렉토리 생성
-echo "[4/6] 애플리케이션 디렉토리 생성..."
-mkdir -p /opt/petclinic
-cd /opt/petclinic
+# 간단한 Flask 애플리케이션 작성
+cat > /opt/maintenance/app.py <<'PYEOF'
+from flask import Flask, jsonify
+from datetime import datetime
 
-# Spring PetClinic 다운로드
-echo "[5/6] Spring PetClinic 다운로드..."
-wget -O petclinic.jar https://github.com/spring-projects/spring-petclinic/releases/download/v3.1.0/spring-petclinic-3.1.0.jar
+app = Flask(__name__)
 
-# 환경 변수 파일 생성
-cat > /opt/petclinic/.env <<EOF
-SPRING_PROFILES_ACTIVE=mysql
-SPRING_DATASOURCE_URL=jdbc:mysql://$DB_HOST:3306/$DB_NAME
-SPRING_DATASOURCE_USERNAME=$DB_USERNAME
-SPRING_DATASOURCE_PASSWORD=$DB_PASSWORD
-SPRING_JPA_HIBERNATE_DDL_AUTO=update
-SERVER_PORT=8080
-EOF
+@app.route('/')
+def home():
+    return jsonify({
+        'status': 'maintenance',
+        'message': 'System is under maintenance',
+        'timestamp': datetime.utcnow().isoformat()
+    })
+
+@app.route('/health')
+def health():
+    return jsonify({
+        'status': 'ok',
+        'mode': 'maintenance'
+    })
+
+@app.route('/api/status')
+def api_status():
+    return jsonify({
+        'service': 'maintenance-api',
+        'version': '1.0.0',
+        'environment': 'azure-dr',
+        'mode': 'standby'
+    })
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)
+PYEOF
 
 # Systemd 서비스 파일 생성
-echo "[6/6] Systemd 서비스 생성..."
-cat > /etc/systemd/system/petclinic.service <<EOF
+cat > /etc/systemd/system/maintenance-api.service <<EOF
 [Unit]
-Description=Spring PetClinic Application
+Description=Maintenance API Server
 After=network.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/petclinic
-EnvironmentFile=/opt/petclinic/.env
-ExecStart=/usr/bin/java -jar /opt/petclinic/petclinic.jar
+WorkingDirectory=/opt/maintenance
+ExecStart=/usr/bin/python3 /opt/maintenance/app.py
 Restart=always
 RestartSec=10
 
@@ -72,22 +82,21 @@ EOF
 
 # 서비스 시작
 systemctl daemon-reload
-systemctl enable petclinic
-systemctl start petclinic
+systemctl enable maintenance-api
+systemctl start maintenance-api
 
 echo "=== WAS VM 초기화 완료 ==="
-echo "DB Host: $DB_HOST"
-echo "Application URL: http://localhost:8080"
+echo "Maintenance API URL: http://localhost:8080"
 date
 
 # 애플리케이션 시작 대기
-echo "애플리케이션 시작 대기 중 (30초)..."
-sleep 30
+echo "서비스 시작 대기 중 (10초)..."
+sleep 10
 
 # Health Check
-if curl -s http://localhost:8080/actuator/health > /dev/null; then
-    echo "✓ 애플리케이션 정상 시작"
+if curl -s http://localhost:8080/health > /dev/null; then
+    echo "✓ 유지보수 API 서버 정상 시작"
 else
-    echo "✗ 애플리케이션 시작 실패 - 로그 확인 필요"
-    journalctl -u petclinic -n 50
+    echo "✗ 유지보수 API 서버 시작 실패"
+    journalctl -u maintenance-api -n 50
 fi

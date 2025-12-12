@@ -1,5 +1,5 @@
 # azure/variables.tf
-# Azure DR Site 변수 정의
+# Azure DR Site 변수 정의 (유지보수 모드)
 
 variable "environment" {
   description = "환경 이름"
@@ -22,25 +22,23 @@ variable "admin_username" {
 variable "admin_ip" {
   description = "SSH 접속 허용 IP (관리자 IP)"
   type        = string
-  # 예: "1.2.3.4/32"
 }
 
 variable "ssh_public_key" {
   description = "SSH 공개 키"
   type        = string
-  # 예: file("~/.ssh/id_rsa.pub")
 }
 
 variable "web_vm_size" {
-  description = "Web VM 크기"
+  description = "Web VM 크기 (유지보수 페이지용)"
   type        = string
   default     = "Standard_B2s"  # 2 vCPU, 4GB RAM
 }
 
 variable "was_vm_size" {
-  description = "WAS VM 크기"
+  description = "WAS VM 크기 (유지보수 API용, 축소됨)"
   type        = string
-  default     = "Standard_B2ms" # 2 vCPU, 8GB RAM
+  default     = "Standard_B1s"  # 1 vCPU, 1GB RAM (비용 절감)
 }
 
 variable "appgw_capacity" {
@@ -50,9 +48,9 @@ variable "appgw_capacity" {
 }
 
 variable "mysql_sku" {
-  description = "MySQL SKU"
+  description = "MySQL SKU (데이터 보존용, 축소됨)"
   type        = string
-  default     = "B_Standard_B2s"
+  default     = "B_Standard_B1s"  # 최소 사양 (비용 절감)
 }
 
 variable "db_name" {
@@ -78,7 +76,6 @@ variable "db_password" {
 variable "aws_vpn_gateway_ip" {
   description = "AWS VPN Gateway Public IP"
   type        = string
-  # AWS 배포 후 입력 필요
 }
 
 variable "aws_vpc_cidr" {
@@ -91,5 +88,4 @@ variable "vpn_shared_key" {
   description = "VPN 공유 키 (Pre-Shared Key)"
   type        = string
   sensitive   = true
-  # 최소 16자 이상의 강력한 키
 }
