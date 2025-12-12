@@ -44,8 +44,9 @@ db_name     = "petclinic"
 db_username = "mysqladmin"
 db_password = "MyNewPassword123!"
 
-# MySQL SKU (최소 사양으로 축소)
-mysql_sku = "B_Standard_B1s"  # (~$25/월)
+# MySQL SKU 
+
+mysql_sku = "B_Standard_B2s"
 
 # =================================================
 # VPN 설정 (AWS 연결)

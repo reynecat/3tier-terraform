@@ -50,7 +50,7 @@ variable "appgw_capacity" {
 variable "mysql_sku" {
   description = "MySQL SKU (데이터 보존용, 축소됨)"
   type        = string
-  default     = "B_Standard_B1s"  # 최소 사양 (비용 절감)
+  default     = "B_Standard_B2s"  # 최소 사양 (비용 절감)
 }
 
 variable "db_name" {
