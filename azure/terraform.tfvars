@@ -11,7 +11,7 @@ location    = "koreacentral"
 # =================================================
 
 # SSH 접속 허용 IP (현재 관리자 IP)
-admin_ip = "43.201.1.235/32"
+admin_ip = "3.36.88.18/32"
 
 # VM 관리자 계정
 admin_username = "azureuser"
@@ -59,7 +59,7 @@ mysql_sku = "B_Standard_B2s"
 # terraform output vpn_connection_tunnel1_address
 #
 # 현재 임시값 사용 중 - AWS 배포 후 교체 필요
-aws_vpn_gateway_ip = "3.39.12.135"  # terraform output vpn_connection_tunnel1_address
+aws_vpn_gateway_ip =  "3.34.153.141"  # terraform output vpn_connection_tunnel1_address
 
 # AWS VPC CIDR (VPN 라우팅용)
 aws_vpc_cidr = "10.0.0.0/16"
