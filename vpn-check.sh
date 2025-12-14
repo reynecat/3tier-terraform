@@ -44,32 +44,3 @@ echo "2. [2]의 Tunnel1 IP가 Azure terraform.tfvars의 aws_vpn_gateway_ip와 �
 echo "3. [5]의 두 Pre-Shared Key가 정확히 일치"
 ```
 
-## 일반적인 실수
-
-### 실수 1: IP 주소 방향 혼동
-```
-잘못된 설정:
-AWS terraform.tfvars:
-  azure_vpn_gateway_ip = "3.36.138.62"  # ❌ 이건 AWS 자신의 IP
-
-올바른 설정:
-AWS terraform.tfvars:
-  azure_vpn_gateway_ip = "20.196.xxx.xxx"  # ✅ Azure Gateway IP
-```
-
-### 실수 2: Tunnel 2 사용
-```
-AWS는 2개 터널을 제공하지만 Azure Local Network Gateway는 1개만 지정:
-
-aws_vpn_gateway_ip = "3.36.138.62"  # ✅ Tunnel 1
-# Tunnel 2는 사용 안 함 (Active-Standby)
-```
-
-### 실수 3: Pre-Shared Key 대소문자
-```
-Pre-Shared Key는 대소문자 구분:
-
-AWS: "MySecureKey123"
-Azure: "mysecurekey123"  # ❌ 연결 안 됨
-
-둘 다 정확히 같아야 함

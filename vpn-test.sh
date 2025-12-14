@@ -44,16 +44,3 @@ az network vnet-gateway list-learned-routes \
   --output table
 
 echo ""
-
-# 5. Connectivity Test
-echo "[5/5] 네트워크 연결 테스트..."
-echo "Azure Web VM에 SSH로 접속해서 다음 명령어 실행:"
-echo "  ping 10.0.11.10"
-echo ""
-echo "AWS EKS Pod에서 다음 명령어 실행:"
-echo "  kubectl run test --image=nicolaka/netshoot -it --rm -- ping 172.16.11.10"
-
-echo ""
-echo "=========================================="
-echo "테스트 완료"
-echo "=========================================="

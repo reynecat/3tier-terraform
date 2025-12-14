@@ -166,6 +166,10 @@ resource "aws_vpn_gateway" "main" {
   tags = {
     Name = "vgw-${var.environment}"
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # VPN Gateway Attachment
@@ -205,6 +209,10 @@ resource "aws_vpn_connection" "azure" {
   tags = {
     Name = "vpn-to-azure-${var.environment}"
   }
+
+  depends_on = [
+    aws_customer_gateway.azure
+  ]
 }
 
 # Static Route (Azure VNet CIDR)

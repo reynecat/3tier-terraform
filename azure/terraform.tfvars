@@ -11,7 +11,7 @@ location    = "koreacentral"
 # =================================================
 
 # SSH 접속 허용 IP (현재 관리자 IP)
-admin_ip = "43.201.1.235/32"
+admin_ip = "3.35.64.226/32"
 
 # VM 관리자 계정
 admin_username = "azureuser"
@@ -53,7 +53,7 @@ mysql_sku = "B_Standard_B2s"
 # =================================================
 
 # AWS VPN Connection의 Tunnel 1 IP 주소
-aws_vpn_gateway_ip = "3.39.12.135"
+aws_vpn_gateway_ip = "3.39.211.139"
 
 # AWS VPC CIDR (VPN 라우팅용)
 aws_vpc_cidr = "10.0.0.0/16"
