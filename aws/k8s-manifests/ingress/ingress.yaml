@@ -16,6 +16,7 @@ metadata:
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
     alb.ingress.kubernetes.io/tags: Environment=prod,ManagedBy=kubernetes
 spec:
+  ingressClassName: alb  
   rules:
   - http:
       paths:
