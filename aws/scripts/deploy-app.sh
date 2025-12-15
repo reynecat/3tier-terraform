@@ -20,7 +20,25 @@ kubectl get nodes
 
 # 3. 노드 레이블 설정
 echo -e "${YELLOW}[3/7] 노드 레이블 설정...${NC}"
-kubectl label nodes --all tier=web tier=was --overwrite
+
+# Web 노드에 tier=web 레이블
+kubectl get nodes -o name | grep -E 'ip-10-0-1[12]-' | while read node; do
+    node_name=${node#node/}
+    echo "  레이블 추가: $node_name → tier=web"
+    kubectl label nodes $node_name tier=web --overwrite
+done
+
+# WAS 노드에 tier=was 레이블  
+kubectl get nodes -o name | grep -E 'ip-10-0-2[12]-' | while read node; do
+    node_name=${node#node/}
+    echo "  레이블 추가: $node_name → tier=was"
+    kubectl label nodes $node_name tier=was --overwrite
+done
+
+echo ""
+echo "노드 레이블 확인:"
+kubectl get nodes -L tier
+
 
 # 4. Namespace 생성
 echo -e "${YELLOW}[4/7] Namespace 생성...${NC}"
