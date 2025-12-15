@@ -171,7 +171,7 @@ cat > /var/www/html/index.html <<'HTML'
 <body>
     <div class="container">
         <div class="icon">🔧</div>
-        <h1>서비스 점검 중입니다</h1>
+        <h1>시스템 점검 중입니다</h1>
         <p class="subtitle">
             더 나은 서비스를 제공하기 위해<br>
             시스템 점검을 진행하고 있습니다
@@ -190,7 +190,7 @@ cat > /var/www/html/index.html <<'HTML'
             </div>
             <div class="info-item">
                 <span class="info-label">모드</span>
-                <span class="info-value">Warm Standby</span>
+                <span class="info-value">pilot light</span>
             </div>
             <div class="info-item">
                 <span class="info-label">상태</span>
