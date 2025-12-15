@@ -53,7 +53,7 @@ read -s DB_PASSWORD
 echo
 
 kubectl create secret generic db-credentials \
-  --from-literal=host="$RDS_ENDPOINT" \
+  --from-literal=host="prod-rds.ciyiccb2k2z8.ap-northeast-2.rds.amazonaws.com" \
   --from-literal=database="petclinic" \
   --from-literal=username="admin" \
   --from-literal=password="$DB_PASSWORD" \

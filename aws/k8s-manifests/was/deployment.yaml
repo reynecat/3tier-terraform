@@ -3,32 +3,82 @@ kind: Deployment
 metadata:
   name: was-spring
   namespace: was
+  labels:
+    app: was-spring
+    tier: was
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: was
+      app: was-spring
+      tier: was
   template:
     metadata:
       labels:
-        app: was
+        app: was-spring
+        tier: was
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: tier
+                operator: In
+                values:
+                - was
       containers:
-      - name: spring-petclinic
+      - name: spring-boot
         image: springio/petclinic:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 8080
+          name: http
+          protocol: TCP
         env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "mysql"
         - name: SPRING_DATASOURCE_URL
-          value: "jdbc:mysql://prod-rds.ciyiccb2k2z8.ap-northeast-2.rds.amazonaws.com:3306/petclinic"
+          value: "jdbc:mysql://prod-rds.ciyiccb2k2z8.ap-northeast-2.rds.amazonaws.com:3306/petclinic?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul"
         - name: SPRING_DATASOURCE_USERNAME
-          value: "admin"
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: username
         - name: SPRING_DATASOURCE_PASSWORD
-          value: "MyNewPassword123!"
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: password
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "500m"
+            cpu: 500m
+            memory: 512Mi
           limits:
-            memory: "1Gi"
-            cpu: "1000m"
+            cpu: 1000m
+            memory: 1Gi
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 90
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12
+      terminationGracePeriodSeconds: 30
