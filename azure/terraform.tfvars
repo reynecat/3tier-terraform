@@ -53,7 +53,7 @@ mysql_sku = "B_Standard_B2s"
 # =================================================
 
 # AWS VPN Connection의 Tunnel 1 IP 주소
-aws_vpn_gateway_ip = "43.201.127.134"
+aws_vpn_gateway_ip = "15.164.56.180"
 
 # AWS VPC CIDR (VPN 라우팅용)
 aws_vpc_cidr = "10.0.0.0/16"

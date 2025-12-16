@@ -5,101 +5,109 @@ echo "=========================================="
 echo "AWS Load Balancer Controller 설치"
 echo "=========================================="
 
-# IAM Policy 다운로드
-curl -o iam-policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.0/docs/install/iam_policy.json
+CLUSTER_NAME="prod-eks"
+REGION="ap-northeast-2"
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
-# IAM Policy 생성
-aws iam create-policy \
-    --policy-name AWSLoadBalancerControllerIAMPolicy \
-    --policy-document file://iam-policy.json \
-    --region ap-northeast-2 2>/dev/null || echo "Policy already exists"
-
-# OIDC Provider 연결
-eksctl utils associate-iam-oidc-provider \
-  --cluster prod-eks \
-  --region ap-northeast-2 \
-  --approve
-
-# Service Account 생성 (기존 것 삭제 후 재생성)
+echo "Account ID: $ACCOUNT_ID"
+echo "Cluster: $CLUSTER_NAME"
+echo "Region: $REGION"
 echo ""
-echo "ServiceAccount 생성 중..."
-eksctl delete iamserviceaccount \
-  --cluster=prod-eks \
-  --namespace=kube-system \
-  --name=aws-load-balancer-controller \
-  --region=ap-northeast-2 2>/dev/null || true
 
-sleep 5
-
-eksctl create iamserviceaccount \
-  --cluster=prod-eks \
-  --namespace=kube-system \
-  --name=aws-load-balancer-controller \
-  --attach-policy-arn=arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):policy/AWSLoadBalancerControllerIAMPolicy \
-  --override-existing-serviceaccounts \
-  --region=ap-northeast-2 \
-  --approve
-
-# ServiceAccount 생성 확인 및 재시도
-echo ""
-echo "ServiceAccount 확인 중..."
-sleep 10
-
-if ! kubectl get serviceaccount -n kube-system aws-load-balancer-controller &>/dev/null; then
-    echo "WARNING: ServiceAccount가 자동 생성되지 않았습니다. 수동 생성 중..."
+# 0. 기존 설치 확인
+echo "[0/7] 기존 설치 확인..."
+if kubectl get deployment -n kube-system aws-load-balancer-controller 2>/dev/null; then
+    echo "이미 설치되어 있습니다."
+    echo "현재 상태:"
+    kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
     
-    # IAM Role ARN 찾기
-    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-    ROLE_NAME=$(aws iam list-roles --query "Roles[?contains(RoleName, 'eksctl-prod-eks-addon-iamserviceaccount-ku')].RoleName" --output text | head -1)
-    ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
-    
-    echo "Using Role ARN: $ROLE_ARN"
-    
-    # ServiceAccount 수동 생성
-    cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: aws-load-balancer-controller
-  namespace: kube-system
-  annotations:
-    eks.amazonaws.com/role-arn: ${ROLE_ARN}
-EOF
+    echo ""
+    echo "재설치가 필요하면:"
+    echo "helm uninstall aws-load-balancer-controller -n kube-system"
+    echo "kubectl delete serviceaccount aws-load-balancer-controller -n kube-system"
+    exit 0
 fi
 
-# 최종 확인
-kubectl get serviceaccount -n kube-system aws-load-balancer-controller
-echo "✓ ServiceAccount 준비 완료"
+# 1. IAM OIDC Provider 확인
+echo "[1/7] IAM OIDC Provider 확인..."
+OIDC_ID=$(aws eks describe-cluster --name $CLUSTER_NAME --region $REGION --query "cluster.identity.oidc.issuer" --output text | cut -d '/' -f 5)
+echo "OIDC ID: $OIDC_ID"
 
-# Helm 설치
-helm repo add eks https://aws.github.io/eks-charts
+if ! aws iam list-open-id-connect-providers | grep -q $OIDC_ID; then
+    echo "OIDC Provider 생성 중..."
+    eksctl utils associate-iam-oidc-provider --cluster=$CLUSTER_NAME --region=$REGION --approve
+else
+    echo "OIDC Provider 존재 ✓"
+fi
+
+# 2. IAM Policy 다운로드
+echo "[2/7] IAM Policy 다운로드..."
+curl -sS -o /tmp/iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.0/docs/install/iam_policy.json
+
+# 3. IAM Policy 생성
+echo "[3/7] IAM Policy 생성..."
+if aws iam get-policy --policy-arn arn:aws:iam::${ACCOUNT_ID}:policy/AWSLoadBalancerControllerIAMPolicy 2>/dev/null; then
+    echo "Policy 존재 ✓"
+else
+    aws iam create-policy \
+        --policy-name AWSLoadBalancerControllerIAMPolicy \
+        --policy-document file:///tmp/iam_policy.json
+    echo "Policy 생성 완료 ✓"
+fi
+
+# 4. 기존 ServiceAccount 정리
+echo "[4/7] ServiceAccount 정리..."
+kubectl delete serviceaccount aws-load-balancer-controller -n kube-system 2>/dev/null || true
+sleep 2
+
+# 5. ServiceAccount 생성
+echo "[5/7] ServiceAccount 생성..."
+eksctl create iamserviceaccount \
+  --cluster=$CLUSTER_NAME \
+  --namespace=kube-system \
+  --name=aws-load-balancer-controller \
+  --role-name AmazonEKSLoadBalancerControllerRole \
+  --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/AWSLoadBalancerControllerIAMPolicy \
+  --region=$REGION \
+  --approve
+
+# 6. Helm으로 Controller 설치
+echo "[6/7] Helm으로 Controller 설치..."
+
+helm repo add eks https://aws.github.io/eks-charts 2>/dev/null || true
 helm repo update
 
-# VPC ID 가져오기
-VPC_ID=$(cd .. && terraform output -raw vpc_id)
+VPC_ID=$(aws eks describe-cluster --name $CLUSTER_NAME --region $REGION --query "cluster.resourcesVpcConfig.vpcId" --output text)
+echo "VPC ID: $VPC_ID"
 
-# Controller 설치
 helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
   -n kube-system \
-  --set clusterName=prod-eks \
+  --set clusterName=$CLUSTER_NAME \
   --set serviceAccount.create=false \
   --set serviceAccount.name=aws-load-balancer-controller \
-  --set region=ap-northeast-2 \
+  --set region=$REGION \
   --set vpcId=$VPC_ID
 
-echo ""
-echo "Controller 설치 완료!"
-echo "Pod 시작 대기 중 (최대 2분)..."
+# 7. 설치 확인
+echo "[7/7] 설치 확인..."
+echo "Controller Pod 시작 대기 중..."
 
-# Pod 시작 대기
-sleep 20
-kubectl wait --for=condition=ready pod \
-  -l app.kubernetes.io/name=aws-load-balancer-controller \
-  -n kube-system \
-  --timeout=120s || echo "WARNING: Pod 시작 시간 초과. 수동 확인 필요."
-
+for i in {1..24}; do
+    READY=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o jsonpath='{.items[*].status.containerStatuses[*].ready}' 2>/dev/null || echo "false")
+    if [[ "$READY" == *"true"* ]]; then
+        echo ""
+        echo "Controller 준비 완료 ✓"
+        break
+    fi
+    echo -n "."
+    sleep 5
+done
 echo ""
-echo "Pod 상태 확인:"
+
+kubectl get deployment -n kube-system aws-load-balancer-controller
 kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
 
-rm -f iam-policy.json
+echo ""
+echo "=========================================="
+echo "설치 완료!"
+echo "=========================================="
