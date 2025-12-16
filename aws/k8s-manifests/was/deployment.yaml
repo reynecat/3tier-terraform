@@ -1,3 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: was-config
+  namespace: was
+data:
+  SPRING_PROFILES_ACTIVE: "mysql"
+  SERVER_PORT: "8080"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,10 +45,24 @@ spec:
           name: http
           protocol: TCP
         env:
+        # ConfigMap에서 읽기
         - name: SPRING_PROFILES_ACTIVE
-          value: "mysql"
+          valueFrom:
+            configMapKeyRef:
+              name: was-config
+              key: SPRING_PROFILES_ACTIVE
+        - name: SERVER_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: was-config
+              key: SERVER_PORT
+        
+        # Secret에서 DB 연결 정보 읽기
         - name: SPRING_DATASOURCE_URL
-          value: "jdbc:mysql://prod-rds.ciyiccb2k2z8.ap-northeast-2.rds.amazonaws.com:3306/petclinic?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul"
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: url
         - name: SPRING_DATASOURCE_USERNAME
           valueFrom:
             secretKeyRef:
@@ -50,6 +73,7 @@ spec:
             secretKeyRef:
               name: db-credentials
               key: password
+        
         resources:
           requests:
             cpu: 500m
@@ -57,22 +81,8 @@ spec:
           limits:
             cpu: 1000m
             memory: 1Gi
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 8080
-          initialDelaySeconds: 90
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 8080
-          initialDelaySeconds: 60
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
+        
+        # Startup Probe - 최초 기동 시 (최대 2분)
         startupProbe:
           httpGet:
             path: /
@@ -81,4 +91,25 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 12
+        
+        # Liveness Probe - 살아있는지 확인
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 0
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        # Readiness Probe - 트래픽 받을 준비가 되었는지
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      
       terminationGracePeriodSeconds: 30
