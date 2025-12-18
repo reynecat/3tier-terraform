@@ -1,0 +1,273 @@
+#cloud-config
+# azure/scripts/maintenance-cloud-init.yaml
+# 점검 페이지용 VM 초기화
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - nginx
+  - curl
+
+write_files:
+  - path: /var/www/html/index.html
+    permissions: '0644'
+    content: |
+      <!DOCTYPE html>
+      <html lang="ko">
+      <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta http-equiv="refresh" content="300">
+          <title>시스템 점검 중</title>
+          <style>
+              * {
+                  margin: 0;
+                  padding: 0;
+                  box-sizing: border-box;
+              }
+              
+              body {
+                  font-family: 'Segoe UI', Arial, sans-serif;
+                  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                  min-height: 100vh;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  padding: 20px;
+              }
+              
+              .container {
+                  background: white;
+                  border-radius: 20px;
+                  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                  max-width: 700px;
+                  width: 100%;
+                  padding: 60px 40px;
+                  text-align: center;
+                  animation: fadeIn 0.5s ease-in;
+              }
+              
+              @keyframes fadeIn {
+                  from {
+                      opacity: 0;
+                      transform: translateY(-20px);
+                  }
+                  to {
+                      opacity: 1;
+                      transform: translateY(0);
+                  }
+              }
+              
+              .icon {
+                  font-size: 100px;
+                  margin-bottom: 30px;
+                  animation: pulse 2s infinite;
+              }
+              
+              @keyframes pulse {
+                  0%, 100% {
+                      transform: scale(1);
+                  }
+                  50% {
+                      transform: scale(1.1);
+                  }
+              }
+              
+              h1 {
+                  color: #333;
+                  font-size: 36px;
+                  margin-bottom: 20px;
+                  font-weight: 700;
+              }
+              
+              .subtitle {
+                  color: #666;
+                  font-size: 20px;
+                  margin-bottom: 40px;
+                  line-height: 1.8;
+              }
+              
+              .status-badge {
+                  display: inline-block;
+                  padding: 12px 24px;
+                  background: #ff6b6b;
+                  color: white;
+                  border-radius: 25px;
+                  font-weight: 700;
+                  font-size: 18px;
+                  margin: 20px 0;
+                  animation: blink 2s infinite;
+              }
+              
+              @keyframes blink {
+                  0%, 50%, 100% {
+                      opacity: 1;
+                  }
+                  25%, 75% {
+                      opacity: 0.7;
+                  }
+              }
+              
+              .info-box {
+                  background: #f8f9fa;
+                  padding: 30px;
+                  border-radius: 15px;
+                  margin-top: 40px;
+              }
+              
+              .info-item {
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  padding: 15px 0;
+                  border-bottom: 1px solid #dee2e6;
+              }
+              
+              .info-item:last-child {
+                  border-bottom: none;
+              }
+              
+              .info-label {
+                  color: #6c757d;
+                  font-weight: 700;
+                  font-size: 16px;
+              }
+              
+              .info-value {
+                  color: #333;
+                  font-weight: 600;
+                  font-size: 16px;
+              }
+              
+              .progress-container {
+                  margin-top: 30px;
+              }
+              
+              .progress-text {
+                  color: #666;
+                  font-size: 14px;
+                  margin-bottom: 10px;
+              }
+              
+              .progress-bar {
+                  width: 100%;
+                  height: 8px;
+                  background: #e0e0e0;
+                  border-radius: 4px;
+                  overflow: hidden;
+              }
+              
+              .progress-bar-fill {
+                  height: 100%;
+                  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+                  animation: progress 4s ease-in-out infinite;
+              }
+              
+              @keyframes progress {
+                  0% {
+                      width: 0%;
+                  }
+                  50% {
+                      width: 70%;
+                  }
+                  100% {
+                      width: 100%;
+                  }
+              }
+              
+              .timestamp {
+                  margin-top: 30px;
+                  color: #999;
+                  font-size: 14px;
+              }
+              
+              .contact {
+                  margin-top: 40px;
+                  padding-top: 30px;
+                  border-top: 2px solid #e0e0e0;
+              }
+              
+              .contact-title {
+                  color: #333;
+                  font-weight: 700;
+                  margin-bottom: 15px;
+                  font-size: 18px;
+              }
+              
+              .contact-info {
+                  color: #666;
+                  line-height: 1.8;
+              }
+          </style>
+      </head>
+      <body>
+          <div class="container">
+              <div class="icon">⚠️</div>
+              <h1>시스템 점검 중입니다</h1>
+              <p class="subtitle">
+                  일시적인 시스템 점검으로 인해<br>
+                  서비스 이용이 제한되고 있습니다
+              </p>
+              
+              <div class="status-badge">긴급 점검 진행 중</div>
+              
+              <div class="info-box">
+                  <div class="info-item">
+                      <span class="info-label">점검 사유</span>
+                      <span class="info-value">AWS 리전 장애 대응</span>
+                  </div>
+                  <div class="info-item">
+                      <span class="info-label">DR 사이트</span>
+                      <span class="info-value">Azure Korea Central</span>
+                  </div>
+                  <div class="info-item">
+                      <span class="info-label">복구 단계</span>
+                      <span class="info-value">데이터 복구 진행 중</span>
+                  </div>
+                  <div class="info-item">
+                      <span class="info-label">예상 복구 시간</span>
+                      <span class="info-value">2-4시간</span>
+                  </div>
+              </div>
+              
+              <div class="progress-container">
+                  <div class="progress-text">복구 진행 상황</div>
+                  <div class="progress-bar">
+                      <div class="progress-bar-fill"></div>
+                  </div>
+              </div>
+              
+              <div class="contact">
+                  <div class="contact-title">문의 사항</div>
+                  <div class="contact-info">
+                      긴급 문의: support@example.com<br>
+                      고객센터: 1588-1234
+                  </div>
+              </div>
+              
+              <div class="timestamp">
+                  페이지 로드 시간: <span id="timestamp"></span><br>
+                  자동 새로고침: 5분마다
+              </div>
+          </div>
+          
+          <script>
+              // 타임스탬프 표시
+              document.getElementById('timestamp').textContent = 
+                  new Date().toLocaleString('ko-KR', {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit'
+                  });
+          </script>
+      </body>
+      </html>
+
+runcmd:
+  - systemctl enable nginx
+  - systemctl start nginx
+  - echo "Maintenance page deployed at $(date)" >> /var/log/cloud-init-output.log
