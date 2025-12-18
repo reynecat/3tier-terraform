@@ -1,0 +1,78 @@
+# others/docker/docker-compose.yml
+# 로컬 개발/테스트용 Docker Compose
+
+version: '3.8'
+
+services:
+  # MySQL 데이터베이스
+  mysql:
+    image: mysql:8.0
+    container_name: petclinic-db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: petclinic
+      MYSQL_USER: petclinic
+      MYSQL_PASSWORD: petclinic
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - petclinic-network
+
+  # WAS (Spring Boot)
+  was:
+    build:
+      context: .
+      dockerfile: Dockerfile.was
+    container_name: petclinic-was
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/petclinic
+      SPRING_DATASOURCE_USERNAME: petclinic
+      SPRING_DATASOURCE_PASSWORD: petclinic
+      SPRING_PROFILES_ACTIVE: local
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    networks:
+      - petclinic-network
+
+  # Web (Nginx)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: petclinic-web
+    ports:
+      - "80:80"
+    depends_on:
+      - was
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - petclinic-network
+
+volumes:
+  mysql-data:
+    driver: local
+
+networks:
+  petclinic-network:
+    driver: bridge

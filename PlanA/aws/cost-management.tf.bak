@@ -1,0 +1,326 @@
+# aws/cost-management.tf
+# AWS 비용 관리 및 최적화 리소스
+
+# =================================================
+# AWS Budgets - 예산 알림
+# =================================================
+
+# 월별 예산 설정
+resource "aws_budgets_budget" "monthly_budget" {
+  name              = "monthly-budget-${var.environment}"
+  budget_type       = "COST"
+  limit_amount      = "600"  # 월 $600 (약 60만원)
+  limit_unit        = "USD"
+  time_unit         = "MONTHLY"
+  time_period_start = "2024-01-01_00:00"
+  
+  # 비용 필터
+  cost_filter {
+    name = "Service"
+    values = [
+      "Amazon Elastic Compute Cloud - Compute",
+      "Amazon Elastic Kubernetes Service",
+      "Amazon Relational Database Service",
+      "Amazon Virtual Private Cloud",
+    ]
+  }
+  
+  # 알림 설정 - 80% 도달 시
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+  
+  # 알림 설정 - 90% 도달 시
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 90
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+  
+  # 알림 설정 - 100% 초과 예상 시
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "FORECASTED"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+}
+
+# EKS 전용 예산
+resource "aws_budgets_budget" "eks_budget" {
+  name              = "eks-budget-${var.environment}"
+  budget_type       = "COST"
+  limit_amount      = "300"  # 월 $300
+  limit_unit        = "USD"
+  time_unit         = "MONTHLY"
+  time_period_start = "2024-01-01_00:00"
+  
+  cost_filter {
+    name = "Service"
+    values = [
+      "Amazon Elastic Kubernetes Service",
+      "Amazon EC2 Container Registry (ECR)",
+    ]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 85
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+}
+
+# RDS 전용 예산
+resource "aws_budgets_budget" "rds_budget" {
+  name              = "rds-budget-${var.environment}"
+  budget_type       = "COST"
+  limit_amount      = "200"  # 월 $200
+  limit_unit        = "USD"
+  time_unit         = "MONTHLY"
+  time_period_start = "2024-01-01_00:00"
+  
+  cost_filter {
+    name = "Service"
+    values = [
+      "Amazon Relational Database Service",
+    ]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 85
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+}
+
+# =================================================
+# CloudWatch Cost Anomaly Detection
+# =================================================
+
+# 비용 이상 감지 모니터
+resource "aws_ce_anomaly_monitor" "cost_monitor" {
+  name              = "cost-anomaly-monitor-${var.environment}"
+  monitor_type      = "DIMENSIONAL"
+  monitor_dimension = "SERVICE"
+}
+
+# 비용 이상 알림 구독
+resource "aws_ce_anomaly_subscription" "cost_alert" {
+  name      = "cost-anomaly-alert-${var.environment}"
+  threshold_expression {
+    dimension {
+      key           = "ANOMALY_TOTAL_IMPACT_ABSOLUTE"
+      values        = ["100"]  # $100 이상 이상 비용 발생 시
+      match_options = ["GREATER_THAN_OR_EQUAL"]
+    }
+  }
+  
+  frequency = "DAILY"
+  
+  monitor_arn_list = [
+    aws_ce_anomaly_monitor.cost_monitor.arn,
+  ]
+  
+  subscriber {
+    type    = "EMAIL"
+    address = var.budget_alert_email
+  }
+}
+
+# =================================================
+# Cost Allocation Tags
+# =================================================
+
+# 비용 추적을 위한 태그 활성화
+resource "aws_ce_cost_category" "environment" {
+  name         = "Environment"
+  rule_version = "CostCategoryExpression.v1"
+  
+  rule {
+    value = "Production"
+    rule {
+      dimension {
+        key           = "TAG"
+        values        = ["prod"]
+        match_options = ["EQUALS"]
+      }
+    }
+  }
+  
+  rule {
+    value = "Development"
+    rule {
+      dimension {
+        key           = "TAG"
+        values        = ["dev"]
+        match_options = ["EQUALS"]
+      }
+    }
+  }
+}
+
+# =================================================
+# SNS Topic for Budget Alerts
+# =================================================
+
+resource "aws_sns_topic" "budget_alerts" {
+  name = "budget-alerts-${var.environment}"
+  
+  tags = {
+    Name = "budget-alerts"
+  }
+}
+
+resource "aws_sns_topic_subscription" "budget_email" {
+  topic_arn = aws_sns_topic.budget_alerts.arn
+  protocol  = "email"
+  endpoint  = var.budget_alert_email
+}
+
+# Slack 알림 (선택사항)
+resource "aws_sns_topic_subscription" "budget_slack" {
+  count     = var.slack_webhook_url != "" ? 1 : 0
+  topic_arn = aws_sns_topic.budget_alerts.arn
+  protocol  = "https"
+  endpoint  = var.slack_webhook_url
+}
+
+# =================================================
+# CloudWatch Dashboard for Cost Monitoring
+# =================================================
+
+resource "aws_cloudwatch_dashboard" "cost_dashboard" {
+  dashboard_name = "cost-monitoring-${var.environment}"
+  
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type = "metric"
+        properties = {
+          metrics = [
+            ["AWS/Billing", "EstimatedCharges", { stat = "Maximum" }]
+          ]
+          period = 21600  # 6시간
+          stat   = "Maximum"
+          region = var.aws_region
+          title  = "Estimated Monthly Charges"
+          yAxis = {
+            left = {
+              min = 0
+            }
+          }
+        }
+      },
+      {
+        type = "metric"
+        properties = {
+          metrics = [
+            ["AWS/EC2", "CPUUtilization", { stat = "Average" }]
+          ]
+          period = 300
+          stat   = "Average"
+          region = var.aws_region
+          title  = "EC2 CPU Utilization"
+        }
+      },
+      {
+        type = "metric"
+        properties = {
+          metrics = [
+            ["AWS/RDS", "CPUUtilization", { stat = "Average" }],
+            [".", "DatabaseConnections", { stat = "Sum" }]
+          ]
+          period = 300
+          stat   = "Average"
+          region = var.aws_region
+          title  = "RDS Metrics"
+        }
+      }
+    ]
+  })
+}
+
+# =================================================
+# Savings Plans (주석 처리 - 수동 구매 권장)
+# =================================================
+
+# Savings Plans는 콘솔에서 수동으로 구매하는 것을 권장
+# 1년 또는 3년 약정으로 최대 72% 할인
+# 
+# 구매 절차:
+# 1. AWS Console → Cost Management → Savings Plans
+# 2. Recommendations 확인
+# 3. Compute Savings Plans 선택 (유연성 높음)
+# 4. 1년 No Upfront 선택 (초기 비용 없음)
+# 5. 시간당 약정 금액 입력
+
+# =================================================
+# Reserved Instances (주석 처리 - 수동 구매 권장)
+# =================================================
+
+# Reserved Instances는 콘솔에서 수동으로 구매
+# 특정 인스턴스 타입에 대해 1년 또는 3년 약정
+# 
+# RDS Reserved Instances:
+# - db.t3.medium, Multi-AZ
+# - 1년 Partial Upfront: 약 30% 할인
+# - 3년 All Upfront: 약 50% 할인
+#
+# EC2 Reserved Instances:
+# - t3.medium (EKS 노드용)
+# - 1년 No Upfront: 약 30% 할인
+
+# =================================================
+# Cost Optimization Hub (자동 권장사항)
+# =================================================
+
+# Cost Optimization Hub는 자동으로 활성화됨
+# 접속: AWS Console → Cost Management → Cost Optimization Hub
+# 
+# 제공하는 권장사항:
+# - 유휴 리소스 (Idle Resources)
+# - 과다 프로비저닝 (Over-provisioned)
+# - Reserved Instances 구매 기회
+# - Savings Plans 권장
+# - EBS 볼륨 최적화
+# - Lambda 메모리 최적화
+
+# =================================================
+# Outputs
+# =================================================
+
+output "budget_alerts_topic_arn" {
+  description = "예산 알림 SNS Topic ARN"
+  value       = aws_sns_topic.budget_alerts.arn
+}
+
+output "cost_anomaly_monitor_arn" {
+  description = "비용 이상 감지 모니터 ARN"
+  value       = aws_ce_anomaly_monitor.cost_monitor.arn
+}
+
+output "cost_dashboard_url" {
+  description = "비용 모니터링 대시보드 URL"
+  value       = "https://console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${aws_cloudwatch_dashboard.cost_dashboard.dashboard_name}"
+}
+
+output "cost_explorer_url" {
+  description = "AWS Cost Explorer URL"
+  value       = "https://console.aws.amazon.com/cost-management/home#/cost-explorer"
+}
+
+output "savings_plans_url" {
+  description = "Savings Plans 구매 URL"
+  value       = "https://console.aws.amazon.com/cost-management/home#/savings-plans/recommendations"
+}
