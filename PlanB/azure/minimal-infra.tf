@@ -135,12 +135,6 @@ output "storage_account_name" {
   value       = azurerm_storage_account.backups.name
 }
 
-output "storage_account_key" {
-  description = "Storage Account Key (민감 정보)"
-  value       = azurerm_storage_account.backups.primary_access_key
-  sensitive   = true
-}
-
 output "blob_container_url" {
   description = "Blob Container URL"
   value       = "https://${azurerm_storage_account.backups.name}.blob.core.windows.net/${var.backup_container_name}"
@@ -166,7 +160,4 @@ output "db_subnet_id" {
   value       = azurerm_subnet.db.id
 }
 
-output "estimated_monthly_cost" {
-  description = "예상 월 비용"
-  value = "Storage: $10/월 (100GB) + Network: $2/월 = 총 $12/월"
-}
+
