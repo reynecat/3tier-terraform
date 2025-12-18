@@ -93,22 +93,6 @@ resource "aws_acm_certificate_validation" "main" {
 # Outputs
 # =================================================
 
-output "route53_nameservers" {
-  description = "Route 53 네임서버 (도메인 등록업체에 설정 필요)"
-  value = var.enable_custom_domain && var.create_hosted_zone ? (
-    aws_route53_zone.main[0].name_servers
-  ) : []
-}
-
-output "hosted_zone_id" {
-  description = "Route 53 Hosted Zone ID"
-  value       = local.hosted_zone_id
-}
-
-output "acm_certificate_arn" {
-  description = "ACM 인증서 ARN (HTTPS용)"
-  value       = var.enable_custom_domain ? aws_acm_certificate.main[0].arn : null
-}
 
 output "setup_instructions" {
   description = "DNS 설정 안내"

@@ -251,26 +251,6 @@ resource "aws_cloudwatch_metric_alarm" "backup_instance_status" {
 # Outputs
 # =================================================
 
-output "backup_instance_id" {
-  description = "백업 인스턴스 ID"
-  value       = aws_instance.backup_instance.id
-}
-
-output "backup_instance_private_ip" {
-  description = "백업 인스턴스 Private IP"
-  value       = aws_instance.backup_instance.private_ip
-}
-
-output "backup_instance_ssh_command" {
-  description = "SSM Session Manager 접속 명령어 (권장)"
-  value       = "aws ssm start-session --target ${aws_instance.backup_instance.id}"
-}
-
-output "backup_logs_command" {
-  description = "백업 로그 확인 명령어"
-  value       = "sudo tail -f /var/log/mysql-backup-to-azure.log"
-}
-
 output "backup_summary" {
   description = "백업 설정 요약"
   value = <<-EOT
