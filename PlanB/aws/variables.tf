@@ -160,6 +160,12 @@ variable "rds_deletion_protection" {
   default     = true
 }
 
+variable "rds_backup_retention" {
+  description = "RDS 백업 보관 기간 (일)"
+  type        = number
+  default     = 7
+}
+
 # =================================================
 # Azure 연동 변수 (Blob Storage)
 # =================================================

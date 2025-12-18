@@ -1,0 +1,31 @@
+# PlanB/azure/1-always/terraform.tfvars
+
+environment = "prod"
+location    = "koreacentral"
+
+# Storage Account
+storage_account_name      = "bloberry01"  # 전역 고유 이름으로 변경 필요
+backup_container_name     = "mysql-backups"
+backup_retention_days     = 30
+storage_replication_type  = "LRS"
+
+# Network
+vnet_cidr       = "172.16.0.0/16"
+web_subnet_cidr = "172.16.11.0/24"
+was_subnet_cidr = "172.16.21.0/24"
+db_subnet_cidr  = "172.16.31.0/24"
+aks_subnet_cidr = "172.16.41.0/24"
+appgw_subnet_cidr = "172.16.1.0/24"
+
+# Azure 구독 정보
+subscription_id = "YOUR_SUBSCRIPTION_ID"  # az account show --query id -o tsv
+tenant_id       = "YOUR_TENANT_ID"        # az account show --query tenantId -o tsv
+
+# Tags
+tags = {
+  Environment = "Production"
+  DRPlan      = "Plan-B-Pilot-Light"
+  ManagedBy   = "Terraform"
+  Purpose     = "Disaster-Recovery"
+  Team        = "AWS2-Team"
+}

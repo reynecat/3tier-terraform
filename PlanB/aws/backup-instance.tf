@@ -1,6 +1,5 @@
 # aws/backup-instance.tf
 # Plan B (Pilot Light): RDS → Azure Blob Storage 직접 백업
-# S3 미사용 (AWS 리전 마비 시 접근 불가)
 
 # =================================================
 # IAM Role for Backup Instance
@@ -27,7 +26,7 @@ resource "aws_iam_role" "backup_instance" {
   }
 }
 
-# RDS 연결 및 Secrets Manager 권한만 (S3 제거)
+# RDS 연결 및 Secrets Manager 권한만 
 resource "aws_iam_role_policy" "backup_instance" {
   name = "backup-instance-policy"
   role = aws_iam_role.backup_instance.id
@@ -307,10 +306,6 @@ output "backup_summary" {
       --container-name ${var.azure_backup_container_name} \
       --output table
   
-  주의:
-    - AWS 리전 마비 시 이 인스턴스도 접근 불가
-    - Azure Blob에 백업본만 남음 (RTO: 2-4시간)
-    - S3 미사용으로 단일 실패 지점 제거
   
   EOT
 }
