@@ -4,7 +4,7 @@
 # 기본 설정
 # =================================================
 
-environment = "prod"
+environment = "blue"
 aws_region  = "ap-northeast-2"
 
 # =================================================
@@ -19,7 +19,7 @@ create_hosted_zone   = false
 # Azure 연동 (Blob Storage 백업용)
 # =================================================
 
-azure_storage_account_name  = "drbackuppetclinic2024"  # 실제 값으로 변경
+azure_storage_account_name  = "" 
 azure_storage_account_key   = "YOUR_AZURE_STORAGE_KEY"  # Azure에서 생성 후 입력
 azure_backup_container_name = "mysql-backups"
 azure_tenant_id             = "YOUR_TENANT_ID"
@@ -81,8 +81,8 @@ rds_backup_retention      = 7
 rds_deletion_protection   = false
 rds_skip_final_snapshot   = true
 
-# =================================================
-# 비용 관리
-# =================================================
 
-budget_alert_email = "your-email@example.com"
+# Route53 설정
+enable_custom_domain = true
+domain_name          = "your-domain.com"  # 실제 도메인으로 변경
+create_hosted_zone   = true

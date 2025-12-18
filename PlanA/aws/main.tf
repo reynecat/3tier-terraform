@@ -15,14 +15,6 @@ terraform {
     }
   }
   
-  # Terraform 상태 저장 백엔드 (S3 사용)
-  # backend "s3" {
-  #   bucket         = "my-terraform-state-bucket"
-  #   key            = "aws-primary/terraform.tfstate"
-  #   region         = "ap-northeast-2"
-  #   encrypt        = true
-  #   dynamodb_table = "terraform-lock"
-  # }
 }
 
 # AWS 프로바이더 초기화
@@ -87,11 +79,6 @@ module "eks" {
 # AWS RDS MySQL (Multi-AZ)
 # =================================================
 
-# DB 패스워드 생성
-#resource "random_password" "db_password" {
-#  length  = 16
-#  special = true
-#}
 
 module "rds" {
   source = "./modules/rds"
@@ -114,35 +101,7 @@ module "rds" {
   deletion_protection        = var.rds_deletion_protection
 }
 
-# =================================================
-# S3 Bucket for DB Backups
-# =================================================
 
-resource "aws_s3_bucket" "backup" {
-  bucket = "dr-backup-${var.environment}-${data.aws_caller_identity.current.account_id}"
-  
-  tags = {
-    Name = "dr-backup-bucket"
-  }
-}
-
-resource "aws_s3_bucket_versioning" "backup" {
-  bucket = aws_s3_bucket.backup.id
-  
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "backup" {
-  bucket = aws_s3_bucket.backup.id
-  
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
-  }
-}
 
 # =================================================
 # Site-to-Site VPN Gateway (Azure 연결용)

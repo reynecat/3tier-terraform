@@ -14,15 +14,6 @@ terraform {
       version = "~> 3.6"
     }
   }
-  
-  # Terraform 상태 저장 백엔드 (S3 사용)
-  # backend "s3" {
-  #   bucket         = "my-terraform-state-bucket"
-  #   key            = "aws-primary/terraform.tfstate"
-  #   region         = "ap-northeast-2"
-  #   encrypt        = true
-  #   dynamodb_table = "terraform-lock"
-  # }
 }
 
 # AWS 프로바이더 초기화
@@ -114,119 +105,6 @@ module "rds" {
   deletion_protection        = var.rds_deletion_protection
 }
 
-# =================================================
-# S3 Bucket for DB Backups
-# =================================================
-
-resource "aws_s3_bucket" "backup" {
-  bucket = "dr-backup-${var.environment}-${data.aws_caller_identity.current.account_id}"
-  
-  tags = {
-    Name = "dr-backup-bucket"
-  }
-}
-
-resource "aws_s3_bucket_versioning" "backup" {
-  bucket = aws_s3_bucket.backup.id
-  
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "backup" {
-  bucket = aws_s3_bucket.backup.id
-  
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
-  }
-}
-
-# =================================================
-# Site-to-Site VPN Gateway (Azure 연결용)
-# =================================================
-
-# Customer Gateway (Azure VPN Gateway 정보)
-resource "aws_customer_gateway" "azure" {
-  bgp_asn    = 65000
-  ip_address = var.azure_vpn_gateway_ip
-  type       = "ipsec.1"
-  
-  tags = {
-    Name = "cgw-azure-${var.environment}"
-  }
-}
-
-# Virtual Private Gateway
-resource "aws_vpn_gateway" "main" {
-  vpc_id = module.vpc.vpc_id
-  
-  tags = {
-    Name = "vgw-${var.environment}"
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-# VPN Gateway Attachment
-resource "aws_vpn_gateway_attachment" "main" {
-  vpc_id         = module.vpc.vpc_id
-  vpn_gateway_id = aws_vpn_gateway.main.id
-}
-
-# VPN Connection
-resource "aws_vpn_connection" "azure" {
-  vpn_gateway_id      = aws_vpn_gateway.main.id
-  customer_gateway_id = aws_customer_gateway.azure.id
-  type                = "ipsec.1"
-  static_routes_only  = true
-  
-  # Pre-Shared Key
-  tunnel1_preshared_key = var.vpn_shared_key
-  tunnel2_preshared_key = var.vpn_shared_key
-  
-  # IPsec 설정
-  tunnel1_ike_versions                 = ["ikev2"]
-  tunnel1_phase1_dh_group_numbers      = [2]
-  tunnel1_phase1_encryption_algorithms = ["AES256"]
-  tunnel1_phase1_integrity_algorithms  = ["SHA2-256"]
-  tunnel1_phase2_dh_group_numbers      = [2]
-  tunnel1_phase2_encryption_algorithms = ["AES256"]
-  tunnel1_phase2_integrity_algorithms  = ["SHA2-256"]
-  
-  tunnel2_ike_versions                 = ["ikev2"]
-  tunnel2_phase1_dh_group_numbers      = [2]
-  tunnel2_phase1_encryption_algorithms = ["AES256"]
-  tunnel2_phase1_integrity_algorithms  = ["SHA2-256"]
-  tunnel2_phase2_dh_group_numbers      = [2]
-  tunnel2_phase2_encryption_algorithms = ["AES256"]
-  tunnel2_phase2_integrity_algorithms  = ["SHA2-256"]
-  
-  tags = {
-    Name = "vpn-to-azure-${var.environment}"
-  }
-
-  depends_on = [
-    aws_customer_gateway.azure
-  ]
-}
-
-# Static Route (Azure VNet CIDR)
-resource "aws_vpn_connection_route" "azure" {
-  destination_cidr_block = var.azure_vnet_cidr
-  vpn_connection_id      = aws_vpn_connection.azure.id
-}
-
-
-# VPN Gateway Route Propagation
-resource "aws_vpn_gateway_route_propagation" "private" {
-  vpn_gateway_id = aws_vpn_gateway.main.id
-  route_table_id = module.vpc.private_route_table_id
-}
 
 
 # =================================================

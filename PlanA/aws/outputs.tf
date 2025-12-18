@@ -51,18 +51,6 @@ output "rds_database_name" {
   value       = module.rds.db_name
 }
 
-# ========== S3 Outputs ==========
-
-output "backup_s3_bucket" {
-  description = "백업용 S3 버킷 이름"
-  value       = aws_s3_bucket.backup.id
-}
-
-output "backup_s3_arn" {
-  description = "백업용 S3 버킷 ARN"
-  value       = aws_s3_bucket.backup.arn
-}
-
 # ========== VPN Outputs ==========
 
 output "vpn_gateway_id" {
@@ -97,44 +85,4 @@ output "eks_update_kubeconfig_command" {
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"
 }
 
-# ========== 배포 요약 ==========
 
-output "deployment_summary" {
-  description = "AWS Primary Site 배포 요약"
-  value = <<-EOT
-  
-  ╔═══════════════════════════════════════════════════════════╗
-  ║         AWS Primary Site 배포 완료!                        ║
-  ╚═══════════════════════════════════════════════════════════╝
-  
-  Region: ${var.aws_region}
-  
-  Network:
-    - VPC CIDR: ${module.vpc.vpc_cidr}
-  
-  
-  EKS Cluster:
-    - Name: ${module.eks.cluster_name}
-    - Endpoint: ${module.eks.cluster_endpoint}
-    - Connect: aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}
-  
-  Database:
-    - RDS Endpoint: ${module.rds.db_instance_endpoint}
-    - Database: ${module.rds.db_name}
-  
-  Backup:
-    - S3 Bucket: ${aws_s3_bucket.backup.id}
-  
-  VPN Gateway:
-    - VPN Gateway ID: ${aws_vpn_gateway.main.id}
-    - Tunnel 1 IP: ${aws_vpn_connection.azure.tunnel1_address}
-    - Tunnel 2 IP: ${aws_vpn_connection.azure.tunnel2_address}
-    - Connected to: Azure VNet ${var.azure_vnet_cidr}
-  
-  Next Steps:
-    1. EKS 클러스터 접속: aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}
-    2. Azure에 VPN IP 입력: ${aws_vpn_connection.azure.tunnel1_address}
-    3. Azure 배포: cd ../azure && terraform apply
-  
-  EOT
-}
