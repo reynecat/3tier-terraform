@@ -14,7 +14,7 @@ storage_account_name = ""  # 1-always와 동일
 # MySQL 설정
 db_name     = "petclinic"
 db_username = "mysqladmin"
-db_password = "byemyblue" 
+db_password = "byemyblue1!" 
 
 mysql_sku        = "B_Standard_B2s"
 mysql_storage_gb = 20
