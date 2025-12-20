@@ -17,3 +17,5 @@ kubectl
 $BACKUP_FILE.gx
 
 sessinon-manager-plugin.deb
+
+terraform.tfstate.*

@@ -1,0 +1,125 @@
+
+
+# aws/route53.tf
+# 기존 Route53 및 ACM 리소스를 data source로만 참조
+
+# =================================================
+# Variables
+# =================================================
+
+variable "azure_appgw_public_ip" {
+  description = "Azure Application Gateway Public IP"
+  type        = string
+  default     = ""
+}
+
+variable "alb_dns_name" {
+  description = "Kubernetes Ingress ALB DNS"
+  type        = string
+  default     = ""
+}
+
+# =================================================
+# Data Sources: 기존 리소스 참조 (읽기 전용)
+# =================================================
+
+# 기존 Route53 Hosted Zone 참조
+data "aws_route53_zone" "main" {
+  count = var.enable_custom_domain ? 1 : 0
+  
+  name         = var.domain_name
+  private_zone = false
+}
+
+# 기존 ACM Certificate 참조
+data "aws_acm_certificate" "main" {
+  count = var.enable_custom_domain ? 1 : 0
+  
+  domain      = var.domain_name
+  statuses    = ["ISSUED"]
+  most_recent = true
+}
+
+# Locals
+locals {
+  hosted_zone_id = var.enable_custom_domain ? data.aws_route53_zone.main[0].zone_id : null
+}
+
+# =================================================
+# Health Checks (새로 생성)
+# =================================================
+
+resource "aws_route53_health_check" "primary" {
+  count = var.enable_custom_domain && var.alb_dns_name != "" ? 1 : 0
+  
+  type              = "HTTPS"
+  resource_path     = "/"
+  fqdn              = var.alb_dns_name
+  port              = 443
+  failure_threshold = 3
+  request_interval  = 30
+  
+  tags = {
+    Name        = "${var.domain_name}-primary-aws"
+    Environment = var.environment
+  }
+}
+
+resource "aws_route53_health_check" "secondary" {
+  count = var.enable_custom_domain && var.azure_appgw_public_ip != "" ? 1 : 0
+  
+  type              = "HTTP"
+  ip_address        = var.azure_appgw_public_ip
+  port              = 80
+  resource_path     = "/"
+  failure_threshold = 3
+  request_interval  = 30
+  
+  tags = {
+    Name        = "${var.domain_name}-secondary-azure"
+    Environment = var.environment
+  }
+}
+
+# =================================================
+# Failover Records (새로 생성)
+# =================================================
+
+resource "aws_route53_record" "primary" {
+  count = var.enable_custom_domain && var.alb_dns_name != "" ? 1 : 0
+  
+  zone_id = local.hosted_zone_id
+  name    = var.domain_name
+  type    = "A"
+  
+  set_identifier = "Primary-AWS"
+  
+  alias {
+    name                   = var.alb_dns_name
+    zone_id                = "Z3W03O7B5YMIYP"  # ap-northeast-2
+    evaluate_target_health = true
+  }
+  
+  failover_routing_policy {
+    type = "PRIMARY"
+  }
+}
+
+resource "aws_route53_record" "secondary" {
+  count = var.enable_custom_domain && var.azure_appgw_public_ip != "" ? 1 : 0
+  
+  zone_id = local.hosted_zone_id
+  name    = var.domain_name
+  type    = "A"
+  ttl     = 60
+  
+  records = [var.azure_appgw_public_ip]
+  
+  set_identifier = "Secondary-Azure"
+  
+  failover_routing_policy {
+    type = "SECONDARY"
+  }
+  
+  health_check_id = aws_route53_health_check.secondary[0].id
+}
