@@ -23,7 +23,7 @@ resource "aws_acm_certificate" "main" {
 }
 
 # =================================================
-# Route 53 Hosted Zone (도메인 있을 때만 생성)
+# Route 53 Hosted Zone
 # =================================================
 
 resource "aws_route53_zone" "main" {
@@ -78,16 +78,6 @@ resource "aws_acm_certificate_validation" "main" {
   validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
 }
 
-# =================================================
-# Ingress ALB를 위한 안내 (실제 DNS는 Kubernetes에서 관리)
-# =================================================
-
-# Ingress Controller가 생성하는 ALB의 DNS를 Route 53에 연결하려면
-# Kubernetes Ingress 매니페스트에 external-dns 어노테이션을 추가하거나
-# 수동으로 CNAME 레코드를 생성해야 합니다
-
-# external-dns 설치 방법:
-# https://github.com/kubernetes-sigs/external-dns
 
 # =================================================
 # Outputs

@@ -11,3 +11,5 @@
 AZ
 
 .terraform.tfstate.lock.info
+
+kubectl
