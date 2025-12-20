@@ -76,6 +76,7 @@ resource "aws_route53_health_check" "secondary" {
 # Failover Records
 # =================================================
 
+
 resource "aws_route53_record" "primary" {
   count = var.enable_custom_domain && var.alb_dns_name != "" ? 1 : 0
   
@@ -88,29 +89,12 @@ resource "aws_route53_record" "primary" {
   alias {
     name                   = var.alb_dns_name
     zone_id                = "ZWKZPGTI48KDX"
-    evaluate_target_health = true
+    evaluate_target_health = false  # false로 변경
   }
   
   failover_routing_policy {
     type = "PRIMARY"
   }
-}
-
-resource "aws_route53_record" "secondary" {
-  count = var.enable_custom_domain && var.azure_appgw_public_ip != "" ? 1 : 0
   
-  zone_id = local.hosted_zone_id
-  name    = var.domain_name
-  type    = "A"
-  ttl     = 60
-  
-  records = [var.azure_appgw_public_ip]
-  
-  set_identifier = "Secondary-Azure"
-  
-  failover_routing_policy {
-    type = "SECONDARY"
-  }
-  
-  health_check_id = aws_route53_health_check.secondary[0].id
+  health_check_id = aws_route53_health_check.primary[0].id  # 이 줄 추가
 }
