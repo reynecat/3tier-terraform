@@ -29,3 +29,5 @@ tags = {
   Purpose     = "Disaster-Recovery"
   Team        = "I2ST"
 }
+
+admin_ssh_public_key = ""
