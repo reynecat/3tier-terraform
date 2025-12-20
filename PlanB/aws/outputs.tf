@@ -133,20 +133,6 @@ output "backup_logs_command" {
   value       = "sudo tail -f /var/log/mysql-backup-to-azure.log"
 }
 
-output "route53_zone_id" {
-  description = "Route 53 Hosted Zone ID"
-  value       = try(local.hosted_zone_id, null)
-}
-
-output "route53_nameservers" {
-  description = "Route 53 네임서버"
-  value       = try(aws_route53_zone.main[0].name_servers, [])
-}
-
-output "acm_certificate_arn" {
-  description = "ACM 인증서 ARN"
-  value       = try(aws_acm_certificate.main[0].arn, null)
-}
 
 output "deployment_summary" {
   description = "배포 요약 정보"

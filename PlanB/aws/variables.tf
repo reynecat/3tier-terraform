@@ -227,9 +227,5 @@ variable "domain_name" {
   type        = string
 }
 
-variable "create_hosted_zone" {
-  description = "Route53 Hosted Zone 생성 여부"
-  type        = bool
-  default     = true
-}
+
 
