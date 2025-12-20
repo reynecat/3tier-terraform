@@ -87,7 +87,7 @@ resource "aws_route53_record" "primary" {
   
   alias {
     name                   = var.alb_dns_name
-    zone_id                = "Z3W03O7B5YMIYP"
+    zone_id                = "ZWKZPGTI48KDX"
     evaluate_target_health = true
   }
   

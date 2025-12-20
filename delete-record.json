@@ -1,0 +1,17 @@
+{
+  "Comment": "Delete existing A record for failover",
+  "Changes": [
+    {
+      "Action": "DELETE",
+      "ResourceRecordSet": {
+        "Name": "blueisthenewblack.store.",
+        "Type": "A",
+        "AliasTarget": {
+          "HostedZoneId": "ZWKZPGTI48KDX",
+          "DNSName": "k8s-web-webingre-5d0cf16a97-1961863514.ap-northeast-2.elb.amazonaws.com.",
+          "EvaluateTargetHealth": true
+        }
+      }
+    }
+  ]
+}
