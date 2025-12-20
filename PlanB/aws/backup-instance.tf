@@ -50,9 +50,11 @@ resource "aws_iam_role_policy" "backup_instance" {
       {
         Effect = "Allow"
         Action = [
+          "secretsmanager:ListSecrets", 
           "secretsmanager:GetSecretValue"
+
         ]
-        Resource = aws_secretsmanager_secret.backup_credentials.arn
+        Resource = "*"
       }
     ]
   })

@@ -13,3 +13,7 @@ AZ
 .terraform.tfstate.lock.info
 
 kubectl
+
+$BACKUP_FILE.gx
+
+sessinon-manager-plugin.deb
