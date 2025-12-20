@@ -1,20 +1,20 @@
 # PlanB/azure/2-emergency/terraform.tfvars
 
-environment = "prod"
+environment = "blue"
 
 # Azure 구독 정보
 subscription_id = "YOUR_SUBSCRIPTION_ID"
 tenant_id       = "YOUR_TENANT_ID"
 
 # 1-always에서 생성된 리소스 참조
-resource_group_name  = "rg-dr-prod"
-vnet_name            = "vnet-dr-prod"
-storage_account_name = "drbackupprod2024"  # 1-always와 동일
+resource_group_name  = "rg-dr-blue"
+vnet_name            = "vnet-dr-blue"
+storage_account_name = ""  # 1-always와 동일
 
 # MySQL 설정
 db_name     = "petclinic"
 db_username = "mysqladmin"
-db_password = "MySecurePassword123!"  # 8자 이상, 대소문자+숫자+특수문자
+db_password = "byemyblue" 
 
 mysql_sku        = "B_Standard_B2s"
 mysql_storage_gb = 20
@@ -25,5 +25,5 @@ tags = {
   DRPlan      = "Plan-B-Pilot-Light"
   Phase       = "Emergency"
   ManagedBy   = "Terraform"
-  Team        = "AWS2-Team"
+  Team        = "I2ST"
 }

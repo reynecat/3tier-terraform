@@ -9,3 +9,5 @@
 *.tfvars.json
 
 AZ
+
+.terraform.tfstate.lock.info
