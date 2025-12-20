@@ -143,6 +143,7 @@ resource "azurerm_application_gateway" "main" {
     fqdns = ["${var.storage_account_name}.z12.web.core.windows.net"]
   }
   
+  
   # HTTP Settings
   backend_http_settings {
     name                  = local.http_setting_name
@@ -182,6 +183,11 @@ resource "azurerm_application_gateway" "main" {
     backend_address_pool_name  = local.backend_address_pool_name
     backend_http_settings_name = local.http_setting_name
     priority                   = 100
+  }
+
+  ssl_policy {
+    policy_type = "Predefined"
+    policy_name = "AppGwSslPolicy20220101"  # 최신 정책 사용
   }
 
   tags = var.tags
