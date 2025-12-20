@@ -12,26 +12,25 @@ aws_region  = "ap-northeast-2"
 # Azure 연동 (Blob Storage 백업용)
 # =================================================
 
-azure_storage_account_name  = "bloberry01" 
-azure_storage_account_key   = "YOUR_AZURE_STORAGE_KEY"
+azure_storage_account_name  = "" 
+azure_storage_account_key   = ""
 azure_backup_container_name = "mysql-backups"
-azure_tenant_id             = "df9bad6f-9a31-4eec-b9fa-f6955eae81bd"
-azure_subscription_id       = "fdc2f63f-a7bc-4ac7-901a-c730f7d317e9"
+azure_tenant_id             = ""
+azure_subscription_id       = ""
 
 # =================================================
 # 백업 인스턴스 설정
 # =================================================
 
 enable_backup_instance = true
-backup_instance_ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDpbPN6AhLJpsRjUOMeixMTVFE7mHNTn7YIfus2TEYUXxsVgutW4Pjbmt7JQzOtP7ZeVPJImb9tDy8mdsVsVX2uDGM7144GM8AeXztzy52atLrZYMRc32n8MAdQXYOCm9c7wISWH7ybacGnL0Bqkj1Yan8N8LS0/0bcPjpkcpIHONg0paU7atOWwVeynod1ius9G55L6dvf7P9pLEhH3AyYmZ2LuAcMzMHOMVf3oTaZ5sCI0E7Le6GIQ94rYoXjume9KGCZ6FoyogTMkPvPm9hr+1lTOhIlx8NHAcNH/adds0SyIu3OyZ8wwBRNOBXcqlFN6vI2v+V1rrnZBf0GhaQLSnPp5WN0xJ4zUebmPLo/sec5vePNmCY9QKxGS+J/FQkq9dF1vyn24A+Ty4nRepLyNkALoerNQrCnh6YpO8CgCviQBIvpsZx6yXwOcE5jcQSNTy5zfPlOAAZotVldYC64sjWSkRT5ie9UwdHlGDSQCQGh/jqLJYeTImrCchkhNt0="
-
+backup_instance_ssh_public_key = ""
 # =================================================
 # 데이터베이스 설정
 # =================================================
 
 db_name     = "petclinic"
 db_username = "admin"
-db_password = "MyNewPassword123!"  # 실제 사용 시 환경변수 권장
+db_password = "byemyblue"  # 실제 사용 시 환경변수 권장
 
 # =================================================
 # VPC 설정
@@ -76,6 +75,6 @@ rds_deletion_protection   = false
 # Route53 설정
 # =================================================
 
-enable_custom_domain = false
+enable_custom_domain = true
 domain_name          = ""
-create_hosted_zone   = false
+create_hosted_zone   = true
