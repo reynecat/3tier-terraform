@@ -5,6 +5,11 @@
 # IAM Role for Backup Instance
 # =================================================
 
+resource "aws_iam_role_policy_attachment" "backup_ssm" {
+  role       = aws_iam_role.backup_instance.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_role" "backup_instance" {
   name = "backup-instance-role-${var.environment}"
 
@@ -52,6 +57,7 @@ resource "aws_iam_role_policy" "backup_instance" {
     ]
   })
 }
+
 
 resource "aws_iam_instance_profile" "backup_instance" {
   name = "backup-instance-profile-${var.environment}"

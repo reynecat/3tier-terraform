@@ -78,11 +78,6 @@ module "eks" {
 # AWS RDS MySQL (Multi-AZ)
 # =================================================
 
-# DB 패스워드 생성
-#resource "random_password" "db_password" {
-#  length  = 16
-#  special = true
-#}
 
 module "rds" {
   source = "./modules/rds"
@@ -94,7 +89,7 @@ module "rds" {
   
   database_name              = var.db_name
   master_username            = var.db_username
-  master_password            = "MyNewPassword123!"
+  master_password            = "byemyblue"
   
   instance_class             = var.rds_instance_class
   allocated_storage          = var.rds_allocated_storage
