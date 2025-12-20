@@ -114,16 +114,105 @@ output "setup_instructions" {
     EOT
   ) : (
     <<-EOT
-    ℹ️  도메인 설정이 비활성화되어 있습니다.
+
     
     현재 접속 방법:
     - Kubernetes Ingress ALB DNS로 직접 접속
     - kubectl get ingress -n web 명령어로 확인
     
-    도메인을 추가하려면:
-    1. terraform.tfvars에서 enable_custom_domain = true
-    2. domain_name = "example.com" 설정
-    3. terraform apply 실행
     EOT
   )
+}
+
+# aws/route53.tf에 추가
+
+# =================================================
+# Failover 설정: Azure Application Gateway (Secondary)
+# =================================================
+
+# Azure App Gateway Public IP를 변수로 받음
+variable "azure_appgw_public_ip" {
+  description = "Azure Application Gateway Public IP (2-emergency 배포 후 입력)"
+  type        = string
+  default     = ""
+}
+
+# Primary: AWS Ingress ALB (현재 활성)
+resource "aws_route53_record" "primary" {
+  count = var.enable_custom_domain ? 1 : 0
+  
+  zone_id = local.hosted_zone_id
+  name    = var.domain_name
+  type    = "A"
+  
+  set_identifier = "Primary-AWS"
+  
+  # Ingress ALB는 kubectl로 확인 후 수동으로 입력하거나 external-dns 사용
+  # 임시로 더미 값 사용
+  ttl     = 60
+  records = ["0.0.0.0"]  # 실제 Ingress ALB IP로 교체 필요
+  
+  failover_routing_policy {
+    type = "PRIMARY"
+  }
+  
+  health_check_id = aws_route53_health_check.primary[0].id
+}
+
+# Secondary: Azure Application Gateway (재해 시 활성)
+resource "aws_route53_record" "secondary" {
+  count = var.enable_custom_domain && var.azure_appgw_public_ip != "" ? 1 : 0
+  
+  zone_id = local.hosted_zone_id
+  name    = var.domain_name
+  type    = "A"
+  ttl     = 60
+  
+  records = [var.azure_appgw_public_ip]
+  
+  set_identifier = "Secondary-Azure"
+  
+  failover_routing_policy {
+    type = "SECONDARY"
+  }
+  
+  health_check_id = aws_route53_health_check.secondary[0].id
+}
+
+# =================================================
+# Health Checks
+# =================================================
+
+# Primary Health Check: AWS Ingress ALB
+resource "aws_route53_health_check" "primary" {
+  count = var.enable_custom_domain ? 1 : 0
+  
+  type              = "HTTPS"
+  resource_path     = "/"
+  fqdn              = var.domain_name
+  port              = 443
+  failure_threshold = 3
+  request_interval  = 30
+  
+  tags = {
+    Name        = "${var.domain_name}-primary-health"
+    Environment = var.environment
+  }
+}
+
+# Secondary Health Check: Azure Application Gateway
+resource "aws_route53_health_check" "secondary" {
+  count = var.enable_custom_domain && var.azure_appgw_public_ip != "" ? 1 : 0
+  
+  type              = "HTTP"
+  ip_address        = var.azure_appgw_public_ip
+  port              = 80
+  resource_path     = "/"
+  failure_threshold = 3
+  request_interval  = 30
+  
+  tags = {
+    Name        = "${var.domain_name}-secondary-health"
+    Environment = var.environment
+  }
 }
