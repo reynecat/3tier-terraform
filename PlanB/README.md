@@ -463,6 +463,10 @@ echo "URL: http://$ALB_DNS"
 
 # 브라우저 접속 또는 curl
 curl -I http://$ALB_DNS
+
+#만약 잘 안되면?
+
+
 ```
 
 ### 4.6 Route53 설정

@@ -107,3 +107,18 @@ module "rds" {
 # =================================================
 
 data "aws_caller_identity" "current" {}
+
+# OIDC Provider for EKS (IAM Role 연동용)
+data "tls_certificate" "eks" {
+  url = module.eks.cluster_endpoint
+}
+
+resource "aws_iam_openid_connect_provider" "eks" {
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = [data.tls_certificate.eks.certificates[0].sha1_fingerprint]
+  url             = module.eks.cluster_endpoint
+
+  tags = {
+    Name = "${var.environment}-eks-oidc"
+  }
+}
