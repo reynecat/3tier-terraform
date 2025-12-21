@@ -75,6 +75,10 @@ AWS (Primary) ↔ Azure (Secondary DR)
 3. **단계적 복구**: 비용과 복구 시간의 균형
 4. **완전한 격리**: AWS 장애 시 Azure만으로 독립 운영
 
+
+### 1.4 고려되고 있는 추가 사항들
+1. **네트워크 아키텍처 변경** Amazon CloudFront, VPC End Point, Azure Front Door 적용 유무
+2. **CI/CD**
 ---
 
 ## 2. 사전 준비
@@ -965,7 +969,7 @@ echo "https://yourdomain.com"
 
 ---
 
-## 8. Failback 절차
+## 8. Failback 절차 이건 팀프로젝트 논외
 
 ### 8.1 사전 확인
 

@@ -1,12 +1,12 @@
 #!/bin/bash
 # PlanB/azure/3-failover/scripts/update-appgw.sh
-# Application Gateway를 Blob Storage에서 AKS로 전환
+# Application Gateway를 Blob Storage에서 AKS LoadBalancer로 전환
 
 set -e
 
 echo "=========================================="
 echo "Application Gateway 업데이트"
-echo "Blob Storage → AKS 전환"
+echo "Blob Storage → AKS LoadBalancer 전환"
 echo "=========================================="
 
 cd ..
@@ -23,16 +23,21 @@ az aks get-credentials \
   --overwrite-existing
 
 echo ""
-echo "[2/7] PetClinic Service IP 확인..."
-PETCLINIC_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.spec.clusterIP}')
+echo "[2/7] PetClinic LoadBalancer IP 확인..."
+PETCLINIC_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
 if [ -z "$PETCLINIC_IP" ]; then
-    echo "ERROR: PetClinic Service를 찾을 수 없습니다."
-    echo "먼저 ./deploy-petclinic.sh를 실행하세요."
+    echo "ERROR: PetClinic LoadBalancer IP를 찾을 수 없습니다."
+    echo "Service가 아직 준비되지 않았을 수 있습니다."
+    echo ""
+    echo "현재 상태 확인:"
+    kubectl get svc petclinic -n petclinic
+    echo ""
+    echo "LoadBalancer IP가 할당될 때까지 기다린 후 다시 시도하세요."
     exit 1
 fi
 
-echo "PetClinic Service IP: $PETCLINIC_IP"
+echo "PetClinic LoadBalancer IP: $PETCLINIC_IP"
 
 echo ""
 echo "[3/7] HTTP Settings에서 Probe 연결 해제..."
@@ -74,12 +79,16 @@ az network application-gateway http-settings update \
     --probe health-probe
 
 echo ""
-echo "[7/7] Backend Pool을 PetClinic으로 변경..."
+echo "[7/7] Backend Pool을 PetClinic LoadBalancer로 변경..."
 az network application-gateway address-pool update \
     --resource-group $RESOURCE_GROUP \
     --gateway-name $APPGW_NAME \
     --name blob-backend-pool \
     --servers $PETCLINIC_IP
+
+echo ""
+echo "설정 적용 대기 (30초)..."
+sleep 30
 
 echo ""
 echo "=========================================="
@@ -91,11 +100,23 @@ APPGW_IP=$(az network public-ip show \
     --name pip-appgw-blue \
     --query ipAddress -o tsv)
 
-echo "PetClinic URL: http://$APPGW_IP"
+echo "Application Gateway Public IP: $APPGW_IP"
+echo "PetClinic LoadBalancer IP: $PETCLINIC_IP"
 echo ""
-echo "확인:"
+echo "아키텍처:"
+echo "  User → App Gateway ($APPGW_IP:80)"
+echo "       → LoadBalancer ($PETCLINIC_IP:8080)"
+echo "       → AKS Pods"
+echo ""
+echo "접속 확인:"
 echo "  curl http://$APPGW_IP"
+echo "  브라우저: http://$APPGW_IP"
 echo ""
-echo "Route53 Secondary Health Check가 이 IP를 모니터링합니다."
+echo "Health Check 확인:"
+echo "  az network application-gateway show-backend-health \\"
+echo "    --resource-group $RESOURCE_GROUP \\"
+echo "    --name $APPGW_NAME"
+echo ""
+echo "Route53 Secondary Health Check가 $APPGW_IP를 모니터링합니다."
 echo "AWS Primary가 실패하면 자동으로 Azure로 Failover됩니다."
 echo ""
