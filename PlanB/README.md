@@ -486,6 +486,7 @@ kubectl get ingress web-ingress -n web -o jsonpath='{.status.loadBalancer.ingres
 echo
 
 # Terraform apply로 Route53 레코드 자동 생성
+terraform.tfvars에서 enable_custom_domain = true로 변경
 terraform apply
 
 # 출력에서 ALB 정보 확인
