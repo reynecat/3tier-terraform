@@ -16,14 +16,14 @@ APPGW_NAME="appgw-blue"
 cd scripts
 
 echo ""
-echo "[1/5] kubectl 설정..."
+echo "[1/7] kubectl 설정..."
 az aks get-credentials \
   --resource-group $RESOURCE_GROUP \
   --name $(cd .. && terraform output -raw aks_cluster_name) \
   --overwrite-existing
 
 echo ""
-echo "[2/5] PetClinic Service IP 확인..."
+echo "[2/7] PetClinic Service IP 확인..."
 PETCLINIC_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.spec.clusterIP}')
 
 if [ -z "$PETCLINIC_IP" ]; then
@@ -35,7 +35,15 @@ fi
 echo "PetClinic Service IP: $PETCLINIC_IP"
 
 echo ""
-echo "[3/5] HTTP Settings 업데이트 (Https → Http)..."
+echo "[3/7] HTTP Settings에서 Probe 연결 해제..."
+az network application-gateway http-settings update \
+    --resource-group $RESOURCE_GROUP \
+    --gateway-name $APPGW_NAME \
+    --name blob-http-settings \
+    --remove probe
+
+echo ""
+echo "[4/7] HTTP Settings를 Http로 변경..."
 az network application-gateway http-settings update \
     --resource-group $RESOURCE_GROUP \
     --gateway-name $APPGW_NAME \
@@ -45,7 +53,7 @@ az network application-gateway http-settings update \
     --host-name-from-backend-pool false
 
 echo ""
-echo "[4/5] Health Probe 업데이트 (Https → Http)..."
+echo "[5/7] Health Probe를 Http로 변경..."
 az network application-gateway probe update \
     --resource-group $RESOURCE_GROUP \
     --gateway-name $APPGW_NAME \
@@ -58,7 +66,15 @@ az network application-gateway probe update \
     --threshold 3
 
 echo ""
-echo "[5/5] Backend Pool 업데이트 (Blob → AKS)..."
+echo "[6/7] HTTP Settings에 Probe 다시 연결..."
+az network application-gateway http-settings update \
+    --resource-group $RESOURCE_GROUP \
+    --gateway-name $APPGW_NAME \
+    --name blob-http-settings \
+    --probe health-probe
+
+echo ""
+echo "[7/7] Backend Pool을 PetClinic으로 변경..."
 az network application-gateway address-pool update \
     --resource-group $RESOURCE_GROUP \
     --gateway-name $APPGW_NAME \
