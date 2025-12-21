@@ -514,10 +514,15 @@ aws route53 list-resource-record-sets \
 
 # 브라우저 접속
 echo "https://yourdomain.com"
+
+
+#https 접속이 잘 안된다면
+
+
 ```
 
 ### 4.7 백업 시스템 확인
-
+byemyblue
 ```bash
 # 백업 인스턴스 ID 확인
 terraform output backup_instance_id
@@ -538,6 +543,9 @@ sudo crontab -l
 
 # 빠져나오기: Ctrl+C 후 exit
 exit
+byemyblue
+
+안되면 aws console에서 수동으로 rds,ec2 연결 후 파일 확인
 ```
 
 ```bash
