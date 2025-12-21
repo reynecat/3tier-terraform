@@ -23,12 +23,14 @@ DB_USERNAME="${db_username}"
 AZURE_STORAGE_ACCOUNT="${azure_storage_account}"
 AZURE_CONTAINER="${azure_container}"
 SECRET_ARN="${secret_arn}"
+BACKUP_CRON="${backup_cron}"  # 새로 추가: Terraform에서 전달받은 Cron 스케줄
 
 echo "RDS Endpoint: $RDS_ENDPOINT"
 echo "RDS Address: $RDS_ADDRESS"
 echo "Database: $DB_NAME"
 echo "Azure Storage: $AZURE_STORAGE_ACCOUNT"
 echo "Azure Container: $AZURE_CONTAINER"
+echo "Backup Schedule: $BACKUP_CRON"
 echo ""
 
 # =================================================
@@ -215,14 +217,30 @@ chmod +x /usr/local/bin/mysql-backup-to-azure.sh
 echo "백업 스크립트 생성 완료"
 
 # =================================================
-# Cron 설정 (5분마다 백업)
+# Cron 설정 (변수로 받은 스케줄 사용)
 # =================================================
 
 echo "Cron 작업 등록..."
+echo "백업 주기: $BACKUP_CRON"
 
-(crontab -l 2>/dev/null; echo "*/5 * * * * /usr/local/bin/mysql-backup-to-azure.sh") | crontab -
+# ==============================================================
+# 백업 주기 설정
+# ==============================================================
+# Terraform의 backup_schedule_cron 변수로 제어됩니다.
+# 
+# terraform.tfvars 예시:
+#   backup_schedule_cron = "0 3 * * *"      # 실제 운영: 하루 1회 (UTC 오전 3시)
+#   backup_schedule_cron = "*/5 * * * *"    # 테스트: 5분마다
+#   backup_schedule_cron = "0 */6 * * *"    # 6시간마다
+#
+# 변경 후 terraform apply 실행 시 EC2 인스턴스가 재시작되며
+# 새로운 스케줄이 적용됩니다.
+# ==============================================================
 
-echo "Cron 설정 완료 (5분마다 실행)"
+(crontab -l 2>/dev/null; echo "$BACKUP_CRON /usr/local/bin/mysql-backup-to-azure.sh") | crontab -
+
+echo "Cron 설정 완료"
+crontab -l
 
 # =================================================
 # 첫 백업 테스트
@@ -247,10 +265,15 @@ echo "종료 시간: $(date)"
 echo "=========================================="
 echo ""
 echo "백업 설정:"
-echo "  - 주기: 5분마다"
+echo "  - 주기: $BACKUP_CRON"
 echo "  - 대상: $RDS_HOST ($DB_NAME)"
 echo "  - 저장소: Azure Blob Storage ($AZURE_STORAGE_ACCOUNT/$AZURE_CONTAINER)"
 echo "  - S3: 미사용 (Plan B)"
+echo ""
+echo "백업 주기 변경 방법:"
+echo "  1. terraform.tfvars에서 backup_schedule_cron 수정"
+echo "  2. terraform apply 실행"
+echo "  3. 인스턴스 재시작 후 새로운 스케줄 적용"
 echo ""
 echo "로그 확인:"
 echo "  tail -f /var/log/mysql-backup-to-azure.log"

@@ -13,7 +13,7 @@ variable "aws_region" {
 variable "environment" {
   description = "환경 (dev/staging/prod)"
   type        = string
-  default     = "prod"
+  default     = "blue"
 }
 
 # =================================================
@@ -109,7 +109,7 @@ variable "eks_was_max_size" {
 variable "db_name" {
   description = "데이터베이스 이름"
   type        = string
-  default     = "petclinic"
+  default     = "bluebase01"
 }
 
 variable "db_username" {
@@ -157,7 +157,7 @@ variable "rds_skip_final_snapshot" {
 variable "rds_deletion_protection" {
   description = "삭제 방지 활성화"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "rds_backup_retention" {
@@ -212,6 +212,23 @@ variable "enable_backup_instance" {
   default     = true
 }
 
+variable "backup_schedule_cron" {
+  description = <<-EOT
+  백업 주기 (Cron 형식)
+  
+  예시:
+    - 하루 1회 (실제 운영): "0 3 * * *" (UTC 오전 3시, KST 정오)
+    - 5분마다 (테스트): "*/5 * * * *"
+    - 1시간마다: "0 * * * *"
+    - 6시간마다: "0 */6 * * *"
+    - 매주 일요일 새벽 3시: "0 3 * * 0"
+  
+  변경 시 terraform apply 실행 필요 (인스턴스 재시작)
+  EOT
+  type        = string
+  default     = "0 3 * * *"
+}
+
 # =================================================
 # Route53 & Custom Domain
 # =================================================
@@ -227,5 +244,8 @@ variable "domain_name" {
   type        = string
 }
 
-
-
+variable "azure_appgw_public_ip" {
+  description = "Azure Application Gateway Public IP (2-emergency 배포 후 입력)"
+  type        = string
+  default     = ""
+}

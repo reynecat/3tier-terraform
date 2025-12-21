@@ -2,6 +2,22 @@
 # Plan B (Pilot Light): RDS → Azure Blob Storage 직접 백업
 
 # =================================================
+# 백업 설정 변수
+# =================================================
+
+variable "backup_schedule_cron" {
+  description = "백업 주기 (Cron 형식). 기본값: 하루 1회 (0 3 * * *), 테스트용: 5분마다 (*/5 * * * *)"
+  type        = string
+  default     = "0 3 * * *"  # 매일 오전 3시 (KST 12시)
+  
+  # 사용 예시:
+  # - 하루 1회 (실제 운영): "0 3 * * *"
+  # - 5분마다 (테스트): "*/5 * * * *"
+  # - 1시간마다: "0 * * * *"
+  # - 6시간마다: "0 */6 * * *"
+}
+
+# =================================================
 # IAM Role for Backup Instance
 # =================================================
 
@@ -31,7 +47,7 @@ resource "aws_iam_role" "backup_instance" {
   }
 }
 
-# RDS 연결 및 Secrets Manager 권한만 
+# RDS 연결 및 Secrets Manager 권한만
 resource "aws_iam_role_policy" "backup_instance" {
   name = "backup-instance-policy"
   role = aws_iam_role.backup_instance.id
@@ -50,16 +66,14 @@ resource "aws_iam_role_policy" "backup_instance" {
       {
         Effect = "Allow"
         Action = [
-          "secretsmanager:ListSecrets", 
+          "secretsmanager:ListSecrets",
           "secretsmanager:GetSecretValue"
-
         ]
         Resource = "*"
       }
     ]
   })
 }
-
 
 resource "aws_iam_instance_profile" "backup_instance" {
   name = "backup-instance-profile-${var.environment}"
@@ -189,6 +203,7 @@ resource "aws_instance" "backup_instance" {
     azure_storage_account = var.azure_storage_account_name
     azure_container       = var.azure_backup_container_name
     secret_arn            = aws_secretsmanager_secret.backup_credentials.arn
+    backup_cron           = var.backup_schedule_cron
   })
 
   tags = {
@@ -274,7 +289,9 @@ output "backup_summary" {
     - 비용: ~$15/월
   
   백업 설정:
-    - 주기: 5분마다
+    - 주기: ${var.backup_schedule_cron}
+      * 실제 운영: "0 3 * * *" (하루 1회, 오전 3시 UTC)
+      * 테스트용: "*/5 * * * *" (5분마다)
     - 대상: ${module.rds.db_instance_endpoint}
     - 저장소: Azure Blob Storage (${var.azure_storage_account_name})
     - Container: ${var.azure_backup_container_name}
@@ -294,6 +311,8 @@ output "backup_summary" {
       --container-name ${var.azure_backup_container_name} \
       --output table
   
+  주의: terraform.tfvars에서 backup_schedule_cron을 변경하면
+       terraform apply 후 인스턴스가 재시작됩니다.
   
   EOT
 }

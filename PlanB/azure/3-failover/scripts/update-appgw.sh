@@ -1,5 +1,5 @@
 #!/bin/bash
-# PlanB/azure/3-failover/scripts/update-appgw.sh
+# PlanB/azure/3-failover/update-appgw.sh
 # Application Gateway를 Blob Storage에서 AKS로 전환
 
 set -e
@@ -12,16 +12,22 @@ echo "=========================================="
 cd ..
 RESOURCE_GROUP=$(terraform output -raw resource_group_name 2>/dev/null || echo "rg-dr-prod")
 APPGW_NAME="appgw-prod"
-AKS_NAME=$(terraform output -raw aks_cluster_name)
 
 cd scripts
 
 echo ""
-echo "[1/4] PetClinic Service IP 확인..."
+echo "[1/5] kubectl 설정..."
+az aks get-credentials \
+  --resource-group $RESOURCE_GROUP \
+  --name $(cd .. && terraform output -raw aks_cluster_name) \
+  --overwrite-existing
+
+echo ""
+echo "[2/5] PetClinic Service IP 확인..."
 PETCLINIC_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.spec.clusterIP}')
 
 if [ -z "$PETCLINIC_IP" ]; then
-    echo "PetClinic Service를 찾을 수 없습니다."
+    echo "ERROR: PetClinic Service를 찾을 수 없습니다."
     echo "먼저 ./deploy-petclinic.sh를 실행하세요."
     exit 1
 fi
@@ -29,7 +35,7 @@ fi
 echo "PetClinic Service IP: $PETCLINIC_IP"
 
 echo ""
-echo "[2/4] Application Gateway Backend Pool 업데이트..."
+echo "[3/5] Application Gateway Backend Pool 업데이트..."
 az network application-gateway address-pool update \
     --resource-group $RESOURCE_GROUP \
     --gateway-name $APPGW_NAME \
@@ -37,7 +43,7 @@ az network application-gateway address-pool update \
     --servers $PETCLINIC_IP
 
 echo ""
-echo "[3/4] HTTP Settings 업데이트..."
+echo "[4/5] HTTP Settings 업데이트..."
 az network application-gateway http-settings update \
     --resource-group $RESOURCE_GROUP \
     --gateway-name $APPGW_NAME \
@@ -47,7 +53,7 @@ az network application-gateway http-settings update \
     --host-name-from-backend-pool false
 
 echo ""
-echo "[4/4] Health Probe 업데이트..."
+echo "[5/5] Health Probe 업데이트..."
 az network application-gateway probe update \
     --resource-group $RESOURCE_GROUP \
     --gateway-name $APPGW_NAME \
@@ -71,4 +77,7 @@ echo "PetClinic URL: http://$APPGW_IP"
 echo ""
 echo "확인:"
 echo "  curl http://$APPGW_IP"
+echo ""
+echo "Route53 Secondary Health Check가 이 IP를 모니터링합니다."
+echo "AWS Primary가 실패하면 자동으로 Azure로 Failover됩니다."
 echo ""

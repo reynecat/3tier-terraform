@@ -1,7 +1,9 @@
 # PlanB/azure/3-failover/main.tf
 # 재해 장기화 시: AKS 클러스터 + PetClinic 배포
 
-terraform {
+   terraform {
+  required_version = ">= 1.14.0"
+  
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
@@ -9,7 +11,6 @@ terraform {
     }
   }
 }
-
 provider "azurerm" {
   features {}
   subscription_id = var.subscription_id

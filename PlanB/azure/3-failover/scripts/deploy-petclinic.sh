@@ -1,5 +1,5 @@
 #!/bin/bash
-# PlanB/azure/3-failover/scripts/deploy-petclinic.sh
+# PlanB/azure/3-failover/deploy-petclinic.sh
 # AKS에 PetClinic 배포
 
 set -e
@@ -19,6 +19,11 @@ cd scripts
 
 echo ""
 echo "[1/6] kubectl 설정 확인..."
+az aks get-credentials \
+  --resource-group $RESOURCE_GROUP \
+  --name $AKS_NAME \
+  --overwrite-existing
+
 kubectl cluster-info
 
 echo ""
@@ -40,6 +45,14 @@ kubectl create secret generic db-credentials \
 echo ""
 echo "[4/6] PetClinic Deployment 생성..."
 cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: petclinic-config
+  namespace: petclinic
+data:
+  SPRING_PROFILES_ACTIVE: "mysql"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -62,7 +75,10 @@ spec:
         - containerPort: 8080
         env:
         - name: SPRING_PROFILES_ACTIVE
-          value: "mysql"
+          valueFrom:
+            configMapKeyRef:
+              name: petclinic-config
+              key: SPRING_PROFILES_ACTIVE
         - name: SPRING_DATASOURCE_URL
           valueFrom:
             secretKeyRef:
@@ -85,18 +101,30 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 8080
-          initialDelaySeconds: 60
-          periodSeconds: 10
-        readinessProbe:
+        startupProbe:
           httpGet:
             path: /
             port: 8080
           initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 0
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 0
           periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
 EOF
 
 echo ""
@@ -107,6 +135,8 @@ kind: Service
 metadata:
   name: petclinic
   namespace: petclinic
+  labels:
+    app: petclinic
 spec:
   type: ClusterIP
   selector:
@@ -114,6 +144,7 @@ spec:
   ports:
   - port: 8080
     targetPort: 8080
+    protocol: TCP
 EOF
 
 echo ""
@@ -129,6 +160,7 @@ echo "PetClinic 배포 완료!"
 echo "=========================================="
 echo ""
 kubectl get pods -n petclinic
+kubectl get svc -n petclinic
 echo ""
 echo "다음 단계:"
 echo "  ./update-appgw.sh  # Application Gateway 업데이트"
