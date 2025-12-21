@@ -54,8 +54,9 @@ locals {
 resource "aws_route53_health_check" "primary" {
   count = var.enable_custom_domain && local.alb_dns_name != null ? 1 : 0
   
-  type              = "HTTPS"
+  type              = "HTTPS_STR_MATCH"
   resource_path     = "/"
+  search_string     = "PetClinic"
   fqdn              = var.domain_name
   port              = 443
   failure_threshold = 3
@@ -101,7 +102,7 @@ resource "aws_route53_record" "primary" {
   alias {
     name                   = local.alb_dns_name
     zone_id                = local.alb_zone_id
-    evaluate_target_health = false
+    evaluate_target_health = true
   }
   
   failover_routing_policy {
