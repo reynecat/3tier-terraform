@@ -98,3 +98,22 @@ resource "aws_route53_record" "primary" {
   
   health_check_id = aws_route53_health_check.primary[0].id  # 이 줄 추가
 }
+
+resource "aws_route53_record" "secondary" {
+  count = var.enable_custom_domain && var.azure_appgw_public_ip != "" ? 1 : 0
+  
+  zone_id = local.hosted_zone_id
+  name    = var.domain_name
+  type    = "A"
+  ttl     = 60
+  
+  records = [var.azure_appgw_public_ip]
+  
+  set_identifier = "Secondary-Azure"
+  
+  failover_routing_policy {
+    type = "SECONDARY"
+  }
+  
+  health_check_id = aws_route53_health_check.secondary[0].id
+}
