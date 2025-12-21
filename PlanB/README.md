@@ -646,9 +646,33 @@ cd scripts
 chmod +x restore-db.sh
 
 # 복구 실행
+
+# 현재 방화벽 규칙 확인
+az mysql flexible-server firewall-rule list \
+  --resource-group rg-dr-blue \
+  --name mysql-dr-blue \
+  --output table
+
+# EC2의 Public IP 확인
+curl -s ifconfig.me
+
+# 방화벽 규칙 추가
+EC2_IP=$(curl -s ifconfig.me)
+
+az mysql flexible-server firewall-rule create \
+  --resource-group rg-dr-blue \
+  --name mysql-dr-blue \
+  --rule-name AllowEC2 \
+  --start-ip-address $EC2_IP \
+  --end-ip-address $EC2_IP
+
+# 연결 테스트
+mysql -h mysql-dr-blue.mysql.database.azure.com \
+      -u mysqladmin \
+      -p
 ./restore-db.sh
 
-# 프롬프트에서 비밀번호 입력: byemyblue1!
+# 프롬프트에서 비밀번호 입력: byemyblue1! byemyblue1!
 ```
 
 **restore-db.sh 실행 과정**:
@@ -658,6 +682,47 @@ chmod +x restore-db.sh
 4. MySQL 복구
 
 **예상 소요 시간**: 5-10분 (백업 크기에 따라)
+
+./restore-db.sh
+==========================================
+MySQL 백업 복구 (Plan B - Emergency)
+시작 시간: Sun Dec 21 21:59:17 UTC 2025
+==========================================
+
+설정 정보:
+  MySQL Host: mysql-dr-blue.mysql.database.azure.com
+  Resource Group: rg-dr-blue
+  Storage Account: bloberry01
+
+MySQL Password: 
+
+[1/4] 최신 백업 파일 찾기...
+최신 백업: backups/backup-20251221-215501.sql.gz
+
+[2/4] 백업 다운로드...
+
+
+Finished[#############################################################]  100.0000%
+
+
+[3/4] 압축 해제...
+
+[4/4] MySQL 복구...
+mysql: [Warning] Using a password on the command line interface can be insecure.
+
+==========================================
+MySQL 백업 복구 완료!
+==========================================
+
+MySQL Host: mysql-dr-blue.mysql.database.azure.com
+Database: petclinic
+
+다음 단계:
+  1. MySQL 연결 테스트
+     mysql -h mysql-dr-blue.mysql.database.azure.com -u mysqladmin -p
+
+  2. 3단계 배포
+     cd ../../3-failover && terraform apply
 
 ### 5.6 Route53 Secondary 설정
 
@@ -742,7 +807,7 @@ chmod +x deploy-petclinic.sh
 # 배포 실행
 ./deploy-petclinic.sh
 
-# 프롬프트에서 비밀번호 입력: MySecurePassword123!
+# 프롬프트에서 비밀번호 입력: byemyblue1!
 ```
 
 **deploy-petclinic.sh 실행 과정**:

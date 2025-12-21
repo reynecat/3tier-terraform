@@ -56,7 +56,7 @@ resource "aws_route53_health_check" "primary" {
   
   type              = "HTTPS"
   resource_path     = "/"
-  fqdn              = local.alb_dns_name
+  fqdn              = var.domain_name
   port              = 443
   failure_threshold = 3
   request_interval  = 30

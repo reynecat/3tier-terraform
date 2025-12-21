@@ -49,8 +49,6 @@ output "deployment_summary" {
     cd scripts
     ./restore-db.sh
   
-  월 추가 비용: ~$50 (MySQL + App Gateway)
-  
   ========================================
   EOT
 }

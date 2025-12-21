@@ -63,7 +63,7 @@ resource "azurerm_mysql_flexible_server" "main" {
   backup_retention_days        = 7
   geo_redundant_backup_enabled = false
   
-  delegated_subnet_id = data.azurerm_subnet.db.id
+  #delegated_subnet_id = data.azurerm_subnet.db.id
   
   storage {
     size_gb = var.mysql_storage_gb
