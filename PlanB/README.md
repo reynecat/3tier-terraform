@@ -16,7 +16,6 @@ AWS (Primary) ↔ Azure (Secondary DR)
 7. [장애 시뮬레이션 테스트](#7-장애-시뮬레이션-테스트)
 8. [Failback 절차](#8-failback-절차)
 9. [트러블슈팅](#9-트러블슈팅)
-10. [비용 분석](#10-비용-분석)
 
 ---
 
@@ -58,19 +57,16 @@ AWS (Primary) ↔ Azure (Secondary DR)
 - **목적**: 최소 비용으로 DR 준비 상태 유지
 - **배포 대상**: Azure Storage Account, VNet 예약
 - **실행 상태**: AWS에서 정상 서비스, Azure는 백업만 수신
-- **월 비용**: ~$5
 
 #### 2단계 (2-emergency): 긴급 대응 (T+0 ~ T+15분)
 - **목적**: 사용자에게 점검 페이지 노출, DB 복구
 - **배포 대상**: Application Gateway, MySQL Flexible Server
 - **실행 상태**: 점검 페이지 표시, 데이터베이스 복구 완료
-- **월 비용**: +$53 (총 $58)
 
 #### 3단계 (3-failover): 완전 복구 (T+15 ~ T+75분)
 - **목적**: Azure에서 전체 서비스 복구
 - **배포 대상**: AKS 클러스터, PetClinic 애플리케이션
 - **실행 상태**: Azure에서 완전한 서비스 제공
-- **월 비용**: +$223 (총 $281)
 
 ### 1.3 핵심 기능
 
@@ -234,7 +230,6 @@ terraform output static_website_endpoint
 curl https://$(terraform output -raw storage_account_name).z12.web.core.windows.net/
 ```
 
-**예상 비용**: ~$5/월 (Storage Account만)
 
 ---
 
@@ -640,7 +635,7 @@ chmod +x restore-db.sh
 # 복구 실행
 ./restore-db.sh
 
-# 프롬프트에서 비밀번호 입력: MySecurePassword123!
+# 프롬프트에서 비밀번호 입력: byemyblue1!
 ```
 
 **restore-db.sh 실행 과정**:
@@ -697,24 +692,12 @@ cp terraform.tfvars.example terraform.tfvars
 
 **terraform.tfvars 수정**:
 ```hcl
-environment = "blue"
 
 # Azure 구독 정보 
 subscription_id = "YOUR_SUBSCRIPTION_ID"
 tenant_id       = "YOUR_TENANT_ID"
 
-# 이전 단계 리소스 참조
-resource_group_name  = "rg-dr-blue"
-vnet_name            = "vnet-dr-blue"
-mysql_server_name    = "mysql-dr-blue"
-appgw_public_ip_name = "pip-appgw-blue"
 
-# AKS 설정
-kubernetes_version = "1.34"
-node_count         = 2
-node_min_count     = 2
-node_max_count     = 5
-node_vm_size       = "Standard_D2s_v3"
 ```
 
 ### 6.3 AKS 클러스터 배포 (T+15 ~ T+35분)
@@ -1071,9 +1054,8 @@ aws route53 get-health-check-status \
   --query 'HealthCheckObservations[0].StatusReport.Status'
 ```
 
-### 8.5 Azure 리소스 정리 (선택사항)
+### 8.5 Azure 리소스 정리 
 
-**비용 절감을 위해 Azure 리소스 일부 제거 가능**
 
 ```bash
 # 3-failover 리소스 삭제 (AKS)
@@ -1350,82 +1332,6 @@ mysql -h $(cd ~/3tier-terraform/PlanB/azure/2-emergency && terraform output -raw
   -u mysqladmin -p < /tmp/backup.sql
 ```
 
----
-
-## 10. 비용 분석
-
-### 10.1 월별 비용
-
-| 단계 | 리소스 | 수량 | 단가 | 월 비용 |
-|------|--------|------|------|---------|
-| **1-always** | | | | **$5** |
-| | Storage Account (LRS) | 1 | $0.02/GB | $2 |
-| | Blob 트랜잭션 | - | - | $1 |
-| | Static Website | 1 | - | $0 |
-| | VNet/Subnet | 6 | - | $0 |
-| | 기타 | - | - | $2 |
-| **2-emergency** | | | | **+$53** |
-| | MySQL B_Standard_B2s | 1 | $25/월 | $25 |
-| | App Gateway Standard_v2 | 1 | $25/월 | $25 |
-| | Public IP | 1 | $3/월 | $3 |
-| **3-failover** | | | | **+$223** |
-| | AKS Control Plane | 1 | $0 | $0 |
-| | Node (D2s_v3) x2 | 2 | $100/월 | $200 |
-| | Load Balancer | 1 | $20/월 | $20 |
-| | Public IP | 1 | $3/월 | $3 |
-| **AWS Primary** | | | | **~$350** |
-| | EKS Control Plane | 1 | $73/월 | $73 |
-| | EC2 (t3.small) x4 | 4 | $15/월 | $60 |
-| | RDS (db.t3.medium) | 1 | $120/월 | $120 |
-| | Multi-AZ 추가 | 1 | $60/월 | $60 |
-| | Backup EC2 (t3.small) | 1 | $15/월 | $15 |
-| | NAT Gateway | 1 | $32/월 | $32 |
-| | **총계** | | | **~$360** |
-
-### 10.2 시나리오별 월 비용
-
-| 시나리오 | 월 비용 | 설명 |
-|----------|---------|------|
-| **정상 운영** | $365 | AWS Primary + Azure 1-always |
-| **긴급 대응** | $418 | AWS Primary + Azure 1+2 |
-| **완전 복구** | $641 | AWS Primary + Azure 1+2+3 |
-| **AWS 중단** | $281 | Azure 1+2+3만 |
-
-### 10.3 데이터 전송 비용
-
-- **AWS → Azure 백업**: 무료 (AWS Egress는 과금되지만 Azure Ingress는 무료)
-- **Azure → AWS Failback**: 약 $0.087/GB (첫 10TB)
-- **예상 백업 크기**: ~100MB/회
-- **월 백업 비용**: ~$0.26 (하루 1회 기준)
-
-### 10.4 비용 절감 팁
-
-1. **테스트 후 Azure 리소스 삭제**
-   ```bash
-   cd ~/3tier-terraform/PlanB/azure/3-failover
-   terraform destroy
-   cd ../2-emergency
-   terraform destroy
-   ```
-
-2. **백업 주기 조정**
-   ```hcl
-   # terraform.tfvars
-   backup_schedule_cron = "0 3 * * *"  # 하루 1회
-   ```
-
-3. **RDS 인스턴스 타입 다운그레이드 (개발/테스트)**
-   ```hcl
-   rds_instance_class = "db.t3.small"  # $60/월 절감
-   ```
-
-4. **EKS 노드 수 최소화**
-   ```hcl
-   eks_web_desired_size = 1
-   eks_was_desired_size = 1
-   ```
-
----
 
 ## 부록 A: 주요 명령어 모음
 
@@ -1530,6 +1436,6 @@ kubectl get secret SECRET_NAME -n NAMESPACE -o yaml
 
 ---
 
-**문서 버전**: v2.0  
+**문서 버전**: v1.0  
 **최종 수정**: 2024-12-21  
-**작성자**: AWS2 Team
+**작성자**: I2ST-blue

@@ -56,7 +56,7 @@ output "deployment_summary" {
   
   다음 단계:
     1. kubectl 설정
-       ${self.aks_kubeconfig_command}
+       az aks get-credentials --resource-group ${var.resource_group_name} --name ${azurerm_kubernetes_cluster.main.name}
     
     2. PetClinic 배포
        cd scripts
@@ -70,7 +70,6 @@ output "deployment_summary" {
        ./update-appgw.sh
   
   예상 배포 시간: 15-20분
-  월 추가 비용: ~$300 (AKS 클러스터)
   
   ========================================
   EOT
