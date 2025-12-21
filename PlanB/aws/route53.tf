@@ -26,6 +26,19 @@ data "aws_acm_certificate" "main" {
   most_recent = true
 }
 
+# Ingress가 생성한 ALB 조회
+data "aws_lb" "ingress_alb" {
+  count = var.enable_custom_domain ? 1 : 0
+  
+  tags = {
+    "elbv2.k8s.aws/cluster"    = module.eks.cluster_name
+    "ingress.k8s.aws/stack"    = "web/web-ingress"
+    "ingress.k8s.aws/resource" = "LoadBalancer"
+  }
+  
+  depends_on = [module.eks]
+}
+
 locals {
   hosted_zone_id = var.enable_custom_domain ? data.aws_route53_zone.main[0].zone_id : null
 }
@@ -40,7 +53,7 @@ resource "aws_route53_health_check" "primary" {
   
   type              = "HTTPS"
   resource_path     = "/"
-  fqdn              = module.eks.cluster_name != "" ? "k8s-web-webingre-xxxxx.${var.aws_region}.elb.amazonaws.com" : ""
+  fqdn              = try(data.aws_lb.ingress_alb[0].dns_name, "")
   port              = 443
   failure_threshold = 3
   request_interval  = 30
@@ -48,11 +61,6 @@ resource "aws_route53_health_check" "primary" {
   tags = {
     Name        = "${var.domain_name}-primary-aws"
     Environment = var.environment
-  }
-  
-  # Note: ALB DNS는 Ingress 배포 후 수동으로 업데이트 필요
-  lifecycle {
-    ignore_changes = [fqdn]
   }
 }
 
@@ -87,10 +95,9 @@ resource "aws_route53_record" "primary" {
   
   set_identifier = "Primary-AWS-ALB"
   
-  # Note: ALB DNS와 Zone ID는 Ingress 배포 후 수동 업데이트 필요
   alias {
-    name                   = "k8s-web-webingre-xxxxx.${var.aws_region}.elb.amazonaws.com"
-    zone_id                = "ZWKZPGTI48KDX"  # ap-northeast-2 ALB Zone ID
+    name                   = data.aws_lb.ingress_alb[0].dns_name
+    zone_id                = data.aws_lb.ingress_alb[0].zone_id
     evaluate_target_health = false
   }
   
@@ -99,10 +106,6 @@ resource "aws_route53_record" "primary" {
   }
   
   health_check_id = aws_route53_health_check.primary[0].id
-  
-  lifecycle {
-    ignore_changes = [alias[0].name, alias[0].zone_id]
-  }
 }
 
 # Secondary Record: Azure App Gateway
@@ -133,9 +136,9 @@ output "route53_failover_status" {
   description = "Failover 설정 상태"
   value = var.enable_custom_domain ? {
     primary_enabled   = true
+    primary_alb_dns   = try(data.aws_lb.ingress_alb[0].dns_name, "ALB not found - Deploy Ingress first")
     secondary_enabled = var.azure_appgw_public_ip != ""
     domain            = var.domain_name
-    primary_fqdn      = "AWS ALB (Ingress 배포 후 확인)"
     secondary_ip      = var.azure_appgw_public_ip != "" ? var.azure_appgw_public_ip : "Not configured"
   } : {
     enabled = false
@@ -148,5 +151,14 @@ output "route53_health_check_ids" {
   value = var.enable_custom_domain ? {
     primary   = try(aws_route53_health_check.primary[0].id, "")
     secondary = try(aws_route53_health_check.secondary[0].id, "")
+  } : {}
+}
+
+output "route53_alb_info" {
+  description = "Ingress ALB 정보"
+  value = var.enable_custom_domain ? {
+    dns_name = try(data.aws_lb.ingress_alb[0].dns_name, "ALB not found")
+    zone_id  = try(data.aws_lb.ingress_alb[0].zone_id, "")
+    arn      = try(data.aws_lb.ingress_alb[0].arn, "")
   } : {}
 }

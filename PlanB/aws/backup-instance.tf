@@ -8,7 +8,7 @@
 variable "backup_schedule_cron" {
   description = "백업 주기 (Cron 형식). 기본값: 하루 1회 (0 3 * * *), 테스트용: 5분마다 (*/5 * * * *)"
   type        = string
-  default     = "0 3 * * *"  # 매일 오전 3시 (KST 12시)
+  default     = "*/5 * * * *" 
   
   # 사용 예시:
   # - 하루 1회 (실제 운영): "0 3 * * *"

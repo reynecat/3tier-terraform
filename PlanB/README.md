@@ -184,7 +184,7 @@ environment = "prod"
 location    = "koreacentral"
 
 # Storage Account (전역 고유 이름 필요)
-storage_account_name      = "drbackupprod2024"  # 소문자+숫자, 3-24자
+storage_account_name      = "bloberry01"  # 소문자+숫자, 3-24자
 backup_container_name     = "mysql-backups"
 backup_retention_days     = 30
 storage_replication_type  = "LRS"
@@ -453,53 +453,26 @@ curl -I http://$ALB_DNS
 
 ### 4.6 Route53 설정
 
-#### 4.6.1 DNS 레코드 생성
-
+### 4.6.1 Ingress 배포 후 Terraform 재실행
 ```bash
 cd ~/3tier-terraform/PlanB/aws
 
-# Hosted Zone ID 확인
-export HOSTED_ZONE_ID=$(aws route53 list-hosted-zones \
-  --query "HostedZones[?Name=='yourdomain.com.'].Id" \
-  --output text | cut -d'/' -f3)
+# Ingress ALB 생성 확인 (2-3분 대기)
+kubectl get ingress web-ingress -n web -w
+# Ctrl+C로 중단
 
-echo "Hosted Zone ID: $HOSTED_ZONE_ID"
+# ALB DNS 확인
+kubectl get ingress web-ingress -n web -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+echo
 
-# ALB Zone ID 확인 (자동)
-export ALB_ARN=$(aws elbv2 describe-load-balancers \
-  --query "LoadBalancers[?DNSName=='$ALB_DNS'].LoadBalancerArn" \
-  --output text)
+# Terraform apply로 Route53 레코드 자동 생성
+terraform apply
 
-export ALB_ZONE_ID=$(aws elbv2 describe-load-balancers \
-  --load-balancer-arns $ALB_ARN \
-  --query "LoadBalancers[0].CanonicalHostedZoneId" \
-  --output text)
+# 출력에서 ALB 정보 확인
+terraform output route53_alb_info
 
-echo "ALB Zone ID: $ALB_ZONE_ID"
 
-# DNS 레코드 생성
-cat > /tmp/dns-record.json << EOF
-{
-  "Changes": [{
-    "Action": "UPSERT",
-    "ResourceRecordSet": {
-      "Name": "yourdomain.com",
-      "Type": "A",
-      "AliasTarget": {
-        "HostedZoneId": "${ALB_ZONE_ID}",
-        "DNSName": "${ALB_DNS}",
-        "EvaluateTargetHealth": true
-      }
-    }
-  }]
-}
-EOF
 
-aws route53 change-resource-record-sets \
-  --hosted-zone-id $HOSTED_ZONE_ID \
-  --change-batch file:///tmp/dns-record.json
-
-echo "DNS 레코드 생성 완료"
 ```
 
 #### 4.6.2 DNS 전파 확인
@@ -510,6 +483,11 @@ dig yourdomain.com +short
 
 # HTTPS 접속
 curl -I https://yourdomain.com
+
+# Route53 레코드 확인
+aws route53 list-resource-record-sets \
+  --hosted-zone-id $(terraform output -raw route53_zone_id) \
+  --query "ResourceRecordSets[?Name=='yourdomain.com.']"
 
 # 브라우저 접속
 echo "https://yourdomain.com"
@@ -542,13 +520,13 @@ exit
 ```bash
 # Azure에서 백업 확인 (로컬 터미널)
 az storage blob list \
-  --account-name drbackupprod2024 \
+  --account-name bloberry01 \
   --container-name mysql-backups \
   --output table
 
 # 최신 백업 확인
 az storage blob list \
-  --account-name drbackupprod2024 \
+  --account-name bloberry01 \
   --container-name mysql-backups \
   --query "sort_by([].{name:name, size:properties.contentLength, modified:properties.lastModified}, &modified)" \
   --output table
