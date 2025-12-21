@@ -16,14 +16,14 @@ APPGW_NAME="appgw-blue"
 cd scripts
 
 echo ""
-echo "[1/5] kubectl 설정..."
+echo "[1/6] kubectl 설정..."
 az aks get-credentials \
   --resource-group $RESOURCE_GROUP \
   --name $(cd .. && terraform output -raw aks_cluster_name) \
   --overwrite-existing
 
 echo ""
-echo "[2/5] PetClinic Service IP 확인..."
+echo "[2/6] PetClinic Service IP 확인..."
 PETCLINIC_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.spec.clusterIP}')
 
 if [ -z "$PETCLINIC_IP" ]; then
@@ -35,7 +35,7 @@ fi
 echo "PetClinic Service IP: $PETCLINIC_IP"
 
 echo ""
-echo "[3/5] Application Gateway Backend Pool 업데이트..."
+echo "[3/6] Application Gateway Backend Pool 업데이트..."
 az network application-gateway address-pool update \
     --resource-group $RESOURCE_GROUP \
     --gateway-name $APPGW_NAME \
@@ -43,25 +43,32 @@ az network application-gateway address-pool update \
     --servers $PETCLINIC_IP
 
 echo ""
-echo "[4/5] HTTP Settings 업데이트..."
-az network application-gateway http-settings update \
-    --resource-group $RESOURCE_GROUP \
-    --gateway-name $APPGW_NAME \
-    --name blob-http-settings \
-    --port 8080 \
-    --protocol Http \
-    --host-name-from-backend-pool false
-
-echo ""
-echo "[5/5] Health Probe 업데이트..."
+echo "[4/6] Health Probe 업데이트 (Http로 변경)..."
 az network application-gateway probe update \
     --resource-group $RESOURCE_GROUP \
     --gateway-name $APPGW_NAME \
     --name health-probe \
     --protocol Http \
     --path "/" \
-    --host-name-from-http-settings false \
-    --host $PETCLINIC_IP
+    --host $PETCLINIC_IP \
+    --interval 30 \
+    --timeout 20 \
+    --threshold 3
+
+echo ""
+echo "[5/6] HTTP Settings 업데이트..."
+az network application-gateway http-settings update \
+    --resource-group $RESOURCE_GROUP \
+    --gateway-name $APPGW_NAME \
+    --name blob-http-settings \
+    --port 8080 \
+    --protocol Http \
+    --host-name-from-backend-pool false \
+    --probe health-probe
+
+echo ""
+echo "[6/6] 설정 적용 대기..."
+sleep 10
 
 echo ""
 echo "=========================================="
@@ -70,7 +77,7 @@ echo "=========================================="
 echo ""
 APPGW_IP=$(az network public-ip show \
     --resource-group $RESOURCE_GROUP \
-    --name pip-appgw-prod \
+    --name pip-appgw-blue \
     --query ipAddress -o tsv)
 
 echo "PetClinic URL: http://$APPGW_IP"
