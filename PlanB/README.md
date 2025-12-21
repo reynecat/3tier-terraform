@@ -239,6 +239,14 @@ curl https://$(terraform output -raw storage_account_name).z12.web.core.windows.
 
 ## 4. AWS Primary Site 구축
 
+### 배포 단계 요약
+1. **인프라 배포** (terraform apply #1): VPC, EKS, RDS, Backup Instance
+2. **kubectl 설정**: EKS 클러스터 접속
+3. **AWS LB Controller 설치**: ALB 프로비저닝 준비
+4. **애플리케이션 배포**: Namespace, Secret, Deployment, Service, Ingress
+5. **Route53 설정** (terraform apply #2): Ingress ALB 조회 후 DNS 레코드 생성
+
+
 ### 4.1 설정 파일 작성
 
 ```bash
@@ -453,6 +461,8 @@ curl -I http://$ALB_DNS
 
 ### 4.6 Route53 설정
 
+**중요**: 이 단계는 Ingress 배포(4.5.5) 이후에만 수행 가능
+
 ### 4.6.1 Ingress 배포 후 Terraform 재실행
 ```bash
 cd ~/3tier-terraform/PlanB/aws
@@ -470,10 +480,12 @@ terraform apply
 
 # 출력에서 ALB 정보 확인
 terraform output route53_alb_info
-
-
-
 ```
+
+**자동으로 수행되는 작업:**
+1. Ingress가 생성한 ALB 자동 조회
+2. ALB DNS와 Zone ID를 Route53 Primary 레코드에 설정
+3. Health Check를 ALB FQDN으로 구성
 
 #### 4.6.2 DNS 전파 확인
 
