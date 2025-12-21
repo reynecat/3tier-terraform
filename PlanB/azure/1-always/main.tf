@@ -95,6 +95,8 @@ resource "azurerm_storage_account" "backups" {
   location                 = azurerm_resource_group.main.location
   account_tier             = "Standard"
   account_replication_type = var.storage_replication_type
+
+  https_traffic_only_enabled = false
   
   # Static Website 기능 활성화
   static_website {
