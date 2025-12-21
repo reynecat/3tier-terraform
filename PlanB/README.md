@@ -345,7 +345,7 @@ kubectl get nodes
 ### 4.4 AWS Load Balancer Controller 설치
 
 ```bash
-cd k8s-manifests/scripts
+cd scripts
 
 # 스크립트 실행 권한 부여
 chmod +x install-lb-controller.sh
@@ -391,7 +391,7 @@ echo "RDS Host: $RDS_HOST"
 kubectl create secret generic db-credentials \
   --from-literal=url="jdbc:mysql://${RDS_HOST}:3306/petclinic" \
   --from-literal=username="admin" \
-  --from-literal=password="MySecurePassword123!" \
+  --from-literal=password="byemyblue" \
   --namespace=was
 
 # 확인
@@ -436,6 +436,12 @@ kubectl get pods -n web
 vi ingress/ingress.yaml
 
 # certificate-arn 부분 수정:
+# 아래 명령어로 확인 후 설정
+export CERT_ARN=$(aws acm list-certificates \
+  --region ap-northeast-2 \
+  --query "CertificateSummaryList[?DomainName=='blueisthenewblack.store'].CertificateArn" \
+  --output text)
+ echo "Certificate ARN: $CERT_ARN"
 # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-northeast-2:ACCOUNT:certificate/CERT_ID
 
 # Ingress 배포

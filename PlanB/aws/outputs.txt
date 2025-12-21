@@ -1,0 +1,191 @@
+aws_account_id = "822837196792"
+aws_region = "ap-northeast-2"
+azure_backup_info = <sensitive>
+backup_instance_id = "i-0155f8568e2ed335d"
+backup_instance_private_ip = "10.0.21.141"
+backup_instance_ssh_command = "aws ssm start-session --target i-0155f8568e2ed335d"
+backup_logs_command = "sudo tail -f /var/log/mysql-backup-to-azure.log"
+backup_summary = <<EOT
+  
+╔════════════════════════════════════════════════╗
+║     Backup Instance (Plan B - Pilot Light)     ║
+╚════════════════════════════════════════════════╝
+  
+인스턴스:
+  - ID: i-0155f8568e2ed335d
+  - Type: t3.small (2 vCPU, 2GB RAM)
+  - Private IP: 10.0.21.141
+  - 비용: ~$15/월
+  
+백업 설정:
+  - 주기: */5 * * * *
+    * 실제 운영: "0 3 * * *" (하루 1회, 오전 3시 UTC)
+    * 테스트용: "*/5 * * * *" (5분마다)
+  - 대상: blue-rds.ciyiccb2k2z8.ap-northeast-2.rds.amazonaws.com:3306
+  - 저장소: Azure Blob Storage (bloberry01)
+  - Container: mysql-backups
+  - S3: 미사용 (Plan B - 리전 독립)
+  
+접속:
+  - SSM: aws ssm start-session --target i-0155f8568e2ed335d
+  - SSH: ssh ubuntu@10.0.21.141 (Bastion 필요)
+  
+모니터링:
+  - 로그: sudo tail -f /var/log/mysql-backup-to-azure.log
+  - Cron: sudo crontab -l -u root
+  
+Azure 백업 확인:
+  az storage blob list \
+    --account-name bloberry01 \
+    --container-name mysql-backups \
+    --output table
+  
+주의: terraform.tfvars에서 backup_schedule_cron을 변경하면
+     terraform apply 후 인스턴스가 재시작됩니다.
+  
+
+EOT
+deployment_summary = <<EOT
+  
+╔════════════════════════════════════════════════╗
+║           AWS Primary Site (Plan B)            ║
+╚════════════════════════════════════════════════╝
+  
+환경: blue
+리전: ap-northeast-2
+계정: 822837196792
+  
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📦 VPC & 네트워크
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VPC ID: vpc-0e1a89ec2d12d3f38
+CIDR: 10.0.0.0/16
+가용영역: ap-northeast-2a, ap-northeast-2c
+  
+서브넷:
+  - Public: 2개
+  - Web Tier: 2개
+  - WAS Tier: 2개
+  - RDS: 2개
+  
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+☸️  EKS 클러스터
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+클러스터명: blue-eks
+엔드포인트: https://FEACDB00987EE9F39E4D7139AF69127D.gr7.ap-northeast-2.eks.amazonaws.com
+  
+노드 그룹:
+  - Web Tier: 2대 (1-4)
+  - WAS Tier: 2대 (1-4)
+  - 인스턴스: t3.small
+  
+kubectl 설정:
+  aws eks update-kubeconfig --region ap-northeast-2 --name blue-eks
+  
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🗄️  RDS MySQL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+엔드포인트: blue-rds.ciyiccb2k2z8.ap-northeast-2.rds.amazonaws.com:3306
+데이터베이스: petclinic
+Multi-AZ: 활성화
+스토리지: 100GB (최대 200GB)
+  
+JDBC URL:
+  jdbc:mysql://blue-rds.ciyiccb2k2z8.ap-northeast-2.rds.amazonaws.com:3306/petclinic
+  
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💾 백업 시스템 (Plan B)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+인스턴스 ID: i-0155f8568e2ed335d
+Private IP: 10.0.21.141
+  
+백업 설정:
+  - 주기: 5분마다
+  - 대상: blue-rds.ciyiccb2k2z8.ap-northeast-2.rds.amazonaws.com
+  - 저장소: Azure Blob Storage
+    * Account: bloberry01
+    * Container: mysql-backups
+  
+접속:
+  aws ssm start-session --target i-0155f8568e2ed335d
+  
+로그 확인:
+  sudo tail -f /var/log/mysql-backup-to-azure.log
+  
+Azure 백업 확인:
+  az storage blob list \\
+    --account-name bloberry01 \\
+    --container-name mysql-backups \\
+    --output table
+  
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 다음 단계
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. kubectl 설정:
+   aws eks update-kubeconfig --region ap-northeast-2 --name blue-eks
+  
+2. 노드 확인:
+   kubectl get nodes
+  
+3. AWS Load Balancer Controller 설치:
+   cd k8s-manifests/scripts
+   ./install-lb-controller.sh
+  
+4. 애플리케이션 배포:
+   ./deploy-app.sh
+  
+5. 백업 확인:
+   aws ssm start-session --target i-0155f8568e2ed335d
+   sudo tail -f /var/log/mysql-backup-to-azure.log
+  
+  
+
+EOT
+eks_cluster_endpoint = "https://FEACDB00987EE9F39E4D7139AF69127D.gr7.ap-northeast-2.eks.amazonaws.com"
+eks_cluster_id = "blue-eks"
+eks_cluster_name = "blue-eks"
+eks_cluster_security_group_id = "sg-00a7c996e0e530bec"
+eks_kubeconfig_command = "aws eks update-kubeconfig --region ap-northeast-2 --name blue-eks"
+eks_was_node_group_id = "blue-eks:blue-was-nodes"
+eks_web_node_group_id = "blue-eks:blue-web-nodes"
+environment = "blue"
+nat_gateway_id = "nat-02fb0739adf6c98b6"
+public_subnet_ids = [
+  "subnet-05700edb447832fbe",
+  "subnet-0b542556c4bd14cec",
+]
+quick_commands = {
+  "backup_logs" = "sudo tail -f /var/log/mysql-backup-to-azure.log"
+  "backup_ssh" = "aws ssm start-session --target i-0155f8568e2ed335d"
+  "check_ingress" = "kubectl get ingress -A"
+  "check_nodes" = "kubectl get nodes"
+  "check_pods" = "kubectl get pods -A"
+  "kubectl_setup" = "aws eks update-kubeconfig --region ap-northeast-2 --name blue-eks"
+  "rds_connection" = "mysql -h blue-rds.ciyiccb2k2z8.ap-northeast-2.rds.amazonaws.com -u admin -p"
+}
+rds_address = "blue-rds.ciyiccb2k2z8.ap-northeast-2.rds.amazonaws.com"
+rds_database_name = "petclinic"
+rds_endpoint = "blue-rds.ciyiccb2k2z8.ap-northeast-2.rds.amazonaws.com:3306"
+rds_instance_id = "db-MIYRKDGHQUBAI4CXEK5CIGL5TE"
+rds_jdbc_url = "jdbc:mysql://blue-rds.ciyiccb2k2z8.ap-northeast-2.rds.amazonaws.com:3306/petclinic"
+rds_port = 3306
+rds_subnet_ids = [
+  "subnet-081021fd88d58bfc0",
+  "subnet-047266081689bc743",
+]
+route53_alb_info = tomap({})
+route53_failover_status = tomap({
+  "enabled" = "false"
+  "message" = "Custom domain is disabled"
+})
+route53_health_check_ids = tomap({})
+vpc_cidr = "10.0.0.0/16"
+vpc_id = "vpc-0e1a89ec2d12d3f38"
+was_subnet_ids = [
+  "subnet-07d53c94d35642ef1",
+  "subnet-04cb397413b72cb20",
+]
+web_subnet_ids = [
+  "subnet-055450379cedaad8e",
+  "subnet-0b6588c29b36113bc",
+]
