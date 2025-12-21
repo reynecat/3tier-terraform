@@ -12,7 +12,7 @@ echo "=========================================="
 # Terraform outputs에서 정보 가져오기
 cd ..
 AKS_NAME=$(terraform output -raw aks_cluster_name)
-RESOURCE_GROUP=$(terraform output -raw resource_group_name 2>/dev/null || echo "rg-dr-prod")
+RESOURCE_GROUP=$(terraform output -raw resource_group_name 2>/dev/null || echo "rg-dr-blue")
 MYSQL_FQDN=$(terraform output -raw mysql_fqdn)
 
 cd scripts

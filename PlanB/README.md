@@ -1275,9 +1275,8 @@ aws route53 get-hosted-zone \
 whois yourdomain.com | grep -i "name server"
 
 # 3. 일치하지 않으면 도메인 등록 업체 사이트에서 네임서버 변경
-# (Gabia, GoDaddy 등)
 
-# 4. DNS 전파 대기 (최대 48시간, 보통 1-2시간)
+# 4. DNS 전파 대기
 # 5. 임시로 /etc/hosts 사용
 dig $(kubectl get ingress web-ingress -n web -o jsonpath='{.status.loadBalancer.ingress[0].hostname}') +short
 # ALB IP 확인 후

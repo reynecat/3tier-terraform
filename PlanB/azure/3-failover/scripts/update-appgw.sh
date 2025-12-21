@@ -10,8 +10,8 @@ echo "Blob Storage → AKS 전환"
 echo "=========================================="
 
 cd ..
-RESOURCE_GROUP=$(terraform output -raw resource_group_name 2>/dev/null || echo "rg-dr-prod")
-APPGW_NAME="appgw-prod"
+RESOURCE_GROUP=$(terraform output -raw resource_group_name 2>/dev/null || echo "rg-dr-blue")
+APPGW_NAME="appgw-blue"
 
 cd scripts
 
