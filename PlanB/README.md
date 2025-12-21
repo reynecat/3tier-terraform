@@ -697,20 +697,20 @@ cp terraform.tfvars.example terraform.tfvars
 
 **terraform.tfvars 수정**:
 ```hcl
-environment = "prod"
+environment = "blue"
 
-# Azure 구독 정보
+# Azure 구독 정보 
 subscription_id = "YOUR_SUBSCRIPTION_ID"
 tenant_id       = "YOUR_TENANT_ID"
 
 # 이전 단계 리소스 참조
-resource_group_name  = "rg-dr-prod"
-vnet_name            = "vnet-dr-prod"
-mysql_server_name    = "mysql-dr-prod"
-appgw_public_ip_name = "pip-appgw-prod"
+resource_group_name  = "rg-dr-blue"
+vnet_name            = "vnet-dr-blue"
+mysql_server_name    = "mysql-dr-blue"
+appgw_public_ip_name = "pip-appgw-blue"
 
 # AKS 설정
-kubernetes_version = "1.28"
+kubernetes_version = "1.34"
 node_count         = 2
 node_min_count     = 2
 node_max_count     = 5

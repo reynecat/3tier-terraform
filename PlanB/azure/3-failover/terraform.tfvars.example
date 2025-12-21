@@ -13,7 +13,7 @@ mysql_server_name    = "mysql-dr-blue"
 appgw_public_ip_name = "pip-appgw-blue"
 
 # AKS 설정
-kubernetes_version = "1.28"
+kubernetes_version = "1.34"
 node_count         = 2
 node_min_count     = 2
 node_max_count     = 5
@@ -25,5 +25,5 @@ tags = {
   DRPlan      = "Plan-B-Pilot-Light"
   Phase       = "Full-Failover"
   ManagedBy   = "Terraform"
-  Team        = "AWS2-Team"
+  Team        = "I2ST"
 }

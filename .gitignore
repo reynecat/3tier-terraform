@@ -16,6 +16,6 @@ kubectl
 
 $BACKUP_FILE.gx
 
-sessinon-manager-plugin.deb
+session-manager-plugin.deb
 
 terraform.tfstate.*
