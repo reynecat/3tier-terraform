@@ -1,122 +1,108 @@
-# 장애 대응 테스트
+🔴 Failover 테스트 가이드 (2-Emergency)
+📋 사전 준비
+1. 현재 상태 확인
 
-# cd ~/3tier-terraform/PlanB/azure/2-emergency
+# DNS 확인
+dig blueisthenewblack.store +short
+# 예상 결과: AWS ALB IP (52.78.38.146, 52.78.138.16)
 
-# App Gateway Public IP 확인
-# AZURE_IP=$(terraform output -raw appgw_public_ip)
-# echo "Azure IP: $AZURE_IP"
+# 웹사이트 접속 확인
+curl -I https://blueisthenewblack.store
+# 예상 결과: HTTP 200 OK (PetClinic)
 
-# HTTPS 접속 테스트 (Self-signed 경고 무시)
-# curl -k -I https://$AZURE_IP
+# AWS EKS Pod 상태
+kubectl config use-context arn:aws:eks:ap-northeast-2:822837196792:cluster/blue-eks
+kubectl get pods -n web
+kubectl get pods -n was
+# 예상 결과: web-nginx 2개, was-spring 2개 Running
+🔥 Step 1: AWS Primary 장애 발생
+명령어:
 
-# HTTP도 확인
-# curl -I http://$AZURE_IP
+# AWS EKS 컨텍스트로 전환
+kubectl config use-context arn:aws:eks:ap-northeast-2:822837196792:cluster/blue-eks
 
-# 둘 다 200이면 실행 
+# Web과 WAS Pod를 0으로 스케일 다운 (장애 시뮬레이션)
+kubectl scale deployment web-nginx -n web --replicas=0
+kubectl scale deployment was-spring -n was --replicas=0
 
-cd ~/3tier-terraform/PlanB/aws
+# 확인
+kubectl get pods -n web
+kubectl get pods -n was
+# 예상 결과: No resources found
+장애 확인:
 
-ALB_SG=$(aws ec2 describe-security-groups \
-  --filters "Name=tag:elbv2.k8s.aws/cluster,Values=$(terraform output -raw eks_cluster_name)" \
-            "Name=tag:ingress.k8s.aws/stack,Values=web/web-ingress" \
-  --query 'SecurityGroups[0].GroupId' \
-  --output text)
+# 웹사이트 접속 시도
+curl -I https://blueisthenewblack.store
+# 예상 결과: HTTP 503 Service Unavailable
+⚡ Step 2: Route53 Failover 발동
+명령어:
 
-PRIMARY_HC=$(terraform output -json route53_health_check_ids | jq -r '.primary')
-SECONDARY_HC=$(terraform output -json route53_health_check_ids | jq -r '.secondary')
+# Health Check를 Inverted 모드로 설정 (Success를 Failure로 해석)
+aws route53 update-health-check \
+  --health-check-id 1deed710-2ce3-431c-8fee-2c4b4433f7f9 \
+  --region us-east-1 \
+  --inverted
 
-echo "=========================================="
-echo "Failover 테스트 (HTTPS 지원 버전)"
-echo "=========================================="
-echo ""
-echo "ALB SG: $ALB_SG"
-echo "Primary HC: $PRIMARY_HC"
-echo "Secondary HC: $SECONDARY_HC"
-echo ""
+# DNS 전파 대기 (약 30초)
+sleep 30
 
-# 초기 상태
-echo "[초기 상태]"
-echo "Primary HC: $(aws route53 get-health-check-status --health-check-id $PRIMARY_HC --query 'HealthCheckObservations[0].StatusReport.Status' --output text)"
-echo "Secondary HC: $(aws route53 get-health-check-status --health-check-id $SECONDARY_HC --query 'HealthCheckObservations[0].StatusReport.Status' --output text)"
-echo "DNS: $(dig +short blueisthenewblack.store | head -1)"
-echo ""
-echo "HTTP: $(curl -sI http://blueisthenewblack.store 2>&1 | head -1)"
-echo "HTTPS: $(curl -sI https://blueisthenewblack.store 2>&1 | head -1)"
-echo ""
+# DNS 변경 확인
+dig blueisthenewblack.store +short
+# 예상 결과: 52.141.46.243 (Azure IP)
+Failover 확인:
 
-read -p "장애 시뮬레이션 시작? (y/n): " start
+# 웹사이트 접속
+curl -I http://blueisthenewblack.store
+# 예상 결과: HTTP 200 OK
 
-if [[ "$start" != "y" ]]; then
-    exit 0
-fi
+# 페이지 내용 확인
+curl -s http://blueisthenewblack.store | grep title
+# 예상 결과: <title>서비스 점검 중</title>
+✅ Step 3: Failover 성공 확인
 
-# 장애 발생
-echo ""
-echo "[장애 발생] $(date '+%H:%M:%S')"
-aws ec2 revoke-security-group-ingress --group-id $ALB_SG --protocol tcp --port 80 --cidr 0.0.0.0/0
-aws ec2 revoke-security-group-ingress --group-id $ALB_SG --protocol tcp --port 443 --cidr 0.0.0.0/0
-echo "HTTP/HTTPS 포트 차단 완료"
-echo ""
+# Route53 Health Check 상태
+aws route53 get-health-check-status \
+  --health-check-id 1deed710-2ce3-431c-8fee-2c4b4433f7f9 \
+  --region us-east-1 \
+  | jq '.HealthCheckObservations[0].StatusReport.Status'
 
-# 모니터링 (2분)
-echo "Failover 대기 중 (2분)..."
-for i in {1..4}; do
-    sleep 30
-    echo ""
-    echo "[+${i}분30초] $(date '+%H:%M:%S')"
-    PRIMARY_STATUS=$(aws route53 get-health-check-status --health-check-id $PRIMARY_HC --query 'HealthCheckObservations[0].StatusReport.Status' --output text)
-    DNS_IP=$(dig +short blueisthenewblack.store | head -1)
-    
-    if [[ "$DNS_IP" == "52.141.46.243" ]]; then
-        LOCATION="Azure ✓"
-    else
-        LOCATION="AWS"
-    fi
-    
-    echo "  Primary HC: $PRIMARY_STATUS"
-    echo "  DNS: $DNS_IP ($LOCATION)"
-done
+# Azure 페이지 직접 접속
+curl -I http://52.141.46.243
+# 예상 결과: HTTP 200 OK (Blob Storage)
+🔄 복원: AWS Primary로 Failback
+Step 1: AWS Pod 복구
 
-echo ""
-echo "[Failover 완료 상태]"
-echo "DNS: $(dig +short blueisthenewblack.store | head -1)"
-echo "HTTP: $(curl -sI http://blueisthenewblack.store 2>&1 | head -1)"
-echo "HTTPS: $(curl -k -sI https://blueisthenewblack.store 2>&1 | head -1)"
-echo ""
+# AWS EKS 컨텍스트
+kubectl config use-context arn:aws:eks:ap-northeast-2:822837196792:cluster/blue-eks
 
-read -p "복구? (y/n): " recover
+# Pod 복구
+kubectl scale deployment web-nginx -n web --replicas=2
+kubectl scale deployment was-spring -n was --replicas=2
 
-if [[ "$recover" == "y" ]]; then
-    echo ""
-    echo "[복구 시작] $(date '+%H:%M:%S')"
-    aws ec2 authorize-security-group-ingress --group-id $ALB_SG --protocol tcp --port 80 --cidr 0.0.0.0/0
-    aws ec2 authorize-security-group-ingress --group-id $ALB_SG --protocol tcp --port 443 --cidr 0.0.0.0/0
-    echo "포트 복구 완료"
-    echo ""
-    
-    echo "Failback 대기 중 (3분)..."
-    for i in {1..6}; do
-        sleep 30
-        echo ""
-        echo "[+${i}분30초] $(date '+%H:%M:%S')"
-        PRIMARY_STATUS=$(aws route53 get-health-check-status --health-check-id $PRIMARY_HC --query 'HealthCheckObservations[0].StatusReport.Status' --output text)
-        DNS_IP=$(dig +short blueisthenewblack.store | head -1)
-        
-        if [[ "$DNS_IP" == "52.141.46.243" ]]; then
-            LOCATION="Azure"
-        else
-            LOCATION="AWS ✓"
-        fi
-        
-        echo "  Primary HC: $PRIMARY_STATUS"
-        echo "  DNS: $DNS_IP ($LOCATION)"
-    done
-    
-    echo ""
-    echo "[최종 상태]"
-    echo "DNS: $(dig +short blueisthenewblack.store | head -1)"
-    echo "HTTPS: $(curl -sI https://blueisthenewblack.store 2>&1 | head -1)"
-fi
+# Pod 시작 확인 (약 60초 대기)
+kubectl get pods -n web
+kubectl get pods -n was
+# 예상 결과: web-nginx 2/2 Running, was-spring 2/2 Running
+Step 2: Health Check 정상화
 
-echo ""
-echo "테스트 완료!"
+# Health Check Inversion 해제
+aws route53 update-health-check \
+  --health-check-id 1deed710-2ce3-431c-8fee-2c4b4433f7f9 \
+  --region us-east-1 \
+  --no-inverted
+
+# DNS 전파 대기 (약 60초)
+sleep 60
+
+# DNS 복구 확인
+dig blueisthenewblack.store +short
+# 예상 결과: AWS ALB IP (52.78.38.146, 52.78.138.16)
+Step 3: 복구 확인
+
+# 웹사이트 접속
+curl -I https://blueisthenewblack.store
+# 예상 결과: HTTP 200 OK
+
+# PetClinic 페이지 확인
+curl -s https://blueisthenewblack.store | grep title
+# 예상 결과: <title>PetClinic :: a Spring Framework demonstration</title>
