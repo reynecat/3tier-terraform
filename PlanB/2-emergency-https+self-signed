@@ -1,0 +1,38 @@
+cd ~/3tier-terraform/PlanB/azure/2-emergency
+mkdir -p ssl
+cd ssl
+
+# Self-signed 인증서 생성
+openssl req -x509 -newkey rsa:2048 \
+  -keyout appgw-key.pem \
+  -out appgw-cert.pem \
+  -days 365 \
+  -nodes \
+  -subj "/CN=blueisthenewblack.store/O=DR/C=KR"
+
+# PFX 형식으로 변환 (Azure App Gateway 요구)
+openssl pkcs12 -export \
+  -out appgw-selfsigned.pfx \
+  -inkey appgw-key.pem \
+  -in appgw-cert.pem \
+  -password pass:ChangeMe123!
+
+cd ..
+
+
+## 방법 1: HTTPS Listener + Self-signed 인증서
+
+### 설명
+- Application Gateway에 443 포트용 HTTPS Listener를 추가하고, 
+OpenSSL로 생성한 Self-signed 인증서를 PFX 형식으로 변환하여 등록하는 방식
+
+- 사용자가 https://blueisthenewblack.store로 접속하면 App Gateway가 자체 SSL/TLS 핸드셰이크를 수행하고, 
+Backend(Blob Storage)로는 HTTPS로 프록시한다. 
+브라우저는 인증서가 신뢰할 수 있는 CA(Certificate Authority)에서 발급되지 않았기 때문에 
+"연결이 비공개로 설정되지 않음" 경고를 표시
+
+### 장점
+HTTPS 프로토콜을 그대로 유지하기 때문에 URL이 https로 시작하여 사용자에게 보안 연결을 시도했다는 인상을 줄 수 있고, 
+일부 기업 환경에서 HTTP 접속을 차단하는 정책이 있을 경우에도 우회할 수 있다. 
+또한 Self-signed 인증서지만 실제 SSL/TLS 암호화가 적용되므로 중간자 공격(MITM)에 대한 최소한의 방어가 가능하며, 
+Route53 Secondary Health Check도 HTTPS 엔드포인트를 직접 체크할 수 있어서 실제 사용자 경험과 동일한 프로토콜로 모니터링 가능

@@ -126,10 +126,17 @@ resource "azurerm_application_gateway" "main" {
     name      = "appgw-ip-config"
     subnet_id = data.azurerm_subnet.appgw.id
   }
-  
+
+  # Frontend Port - HTTP
   frontend_port {
-    name = local.frontend_port_name
+    name = "http-port"
     port = 80
+  }
+
+  # Frontend Port - HTTPS 추가
+  frontend_port {
+    name = "https-port"
+    port = 443
   }
   
   frontend_ip_configuration {
@@ -169,20 +176,47 @@ resource "azurerm_application_gateway" "main" {
   
   # HTTP Listener
   http_listener {
-    name                           = local.listener_name
+    name                           = "http-listener"
     frontend_ip_configuration_name = local.frontend_ip_configuration_name
-    frontend_port_name             = local.frontend_port_name
+    frontend_port_name             = "http-port"
     protocol                       = "Http"
   }
+
+  # HTTPS Listener
+  http_listener {
+    name                           = "https-listener"
+    frontend_ip_configuration_name = local.frontend_ip_configuration_name
+    frontend_port_name             = "https-port"
+    protocol                       = "Https"
+    ssl_certificate_name           = "appgw-ssl-cert"
+  }
   
-  # Routing Rule
+  # HTTP Routing Rule
   request_routing_rule {
     name                       = local.request_routing_rule_name
     rule_type                  = "Basic"
-    http_listener_name         = local.listener_name
+    http_listener_name         = "http-listener"
     backend_address_pool_name  = local.backend_address_pool_name
     backend_http_settings_name = local.http_setting_name
     priority                   = 100
+  }
+
+
+  # HTTPS Routing Rule 추가
+  request_routing_rule {
+    name                       = "https-routing-rule"
+    rule_type                  = "Basic"
+    http_listener_name         = "https-listener"
+    backend_address_pool_name  = local.backend_address_pool_name
+    backend_http_settings_name = local.http_setting_name
+    priority                   = 101
+  }
+
+  # Self-signed SSL Certificate 추가
+  ssl_certificate {
+    name     = "appgw-ssl-cert"
+    data     = filebase64("${path.module}/ssl/appgw-selfsigned.pfx")
+    password = "ChangeMe123!"
   }
 
   ssl_policy {

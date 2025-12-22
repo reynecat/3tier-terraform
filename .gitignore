@@ -19,3 +19,9 @@ $BACKUP_FILE.gx
 session-manager-plugin.deb
 
 terraform.tfstate.*
+
+appgw-cert.pem
+
+appgw-key.pem
+
+appgw-selfsigned.pfx
