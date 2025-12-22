@@ -18,29 +18,54 @@ variable "tenant_id" {
   sensitive   = true
 }
 
-# 이전 단계에서 생성된 리소스 참조
+# 1-always에서 생성된 리소스 참조
 variable "resource_group_name" {
-  description = "Resource Group 이름"
+  description = "Resource Group 이름 (1-always에서 생성)"
   type        = string
   default     = "rg-dr-prod"
 }
 
 variable "vnet_name" {
-  description = "VNet 이름"
+  description = "VNet 이름 (1-always에서 생성)"
   type        = string
   default     = "vnet-dr-prod"
 }
 
-variable "mysql_server_name" {
-  description = "MySQL 서버 이름 (2-emergency에서 생성)"
+variable "storage_account_name" {
+  description = "Storage Account 이름 (1-always에서 생성)"
   type        = string
-  default     = "mysql-dr-prod"
 }
 
-variable "appgw_public_ip_name" {
-  description = "App Gateway Public IP 이름 (2-emergency에서 생성)"
+# MySQL 설정
+variable "db_name" {
+  description = "데이터베이스 이름"
   type        = string
-  default     = "pip-appgw-prod"
+  default     = "petclinic"
+}
+
+variable "db_username" {
+  description = "MySQL 관리자 사용자명"
+  type        = string
+  default     = "mysqladmin"
+  sensitive   = true
+}
+
+variable "db_password" {
+  description = "MySQL 관리자 비밀번호"
+  type        = string
+  sensitive   = true
+}
+
+variable "mysql_sku" {
+  description = "MySQL SKU"
+  type        = string
+  default     = "B_Standard_B2s"
+}
+
+variable "mysql_storage_gb" {
+  description = "MySQL 스토리지 (GB)"
+  type        = number
+  default     = 20
 }
 
 # AKS 설정

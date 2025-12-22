@@ -15,7 +15,10 @@
   - WAS Subnet
   - DB Subnet
   - AKS Subnet
-  - App Gateway Subnet
+
+### Route53 설정 (옵션):
+- **CNAME 레코드**: 서브도메인을 Blob Static Website로 직접 연결
+  - 예: maintenance.example.com → storage-account.z12.web.core.windows.net
 
 ## 배포
 
@@ -25,10 +28,25 @@ az login
 az account show
 ```
 
-### 2. terraform.tfvars 수정
+### 2. terraform.tfvars 작성
 ```bash
-# subscription_id, tenant_id 입력
-# storage_account_name 전역 고유 이름으로 변경
+cp terraform.tfvars.example terraform.tfvars
+```
+
+terraform.tfvars 내용:
+```hcl
+# Azure 인증
+subscription_id      = "your-subscription-id"
+tenant_id           = "your-tenant-id"
+
+# Storage Account (전역 고유 이름)
+storage_account_name = "bloberry01"
+
+# Route53 설정 (옵션 - 도메인이 있는 경우만)
+enable_route53       = true
+aws_region          = "us-east-1"
+domain_name         = "example.com"
+subdomain_name      = "maintenance.example.com"
 ```
 
 ### 3. 배포 실행
@@ -43,8 +61,11 @@ terraform apply
 # Output에서 URL 확인
 terraform output static_website_endpoint
 
-# 브라우저에서 접속
-https://<storage-account>.z12.web.core.windows.net/
+# 직접 접속 (Blob Storage)
+curl https://<storage-account>.z12.web.core.windows.net/
+
+# 서브도메인 접속 (Route53 설정한 경우)
+curl https://maintenance.example.com/
 ```
 
 ## 백업 확인
@@ -60,6 +81,64 @@ az storage blob list \
   --output table
 ```
 
+## Route53 설정
+
+### Route53을 사용하지 않는 경우
+terraform.tfvars에서:
+```hcl
+enable_route53 = false
+```
+
+### Route53을 사용하는 경우
+1. AWS 자격 증명 설정:
+```bash
+aws configure
+# 또는
+export AWS_ACCESS_KEY_ID="..."
+export AWS_SECRET_ACCESS_KEY="..."
+```
+
+2. terraform.tfvars에서:
+```hcl
+enable_route53  = true
+domain_name     = "example.com"
+subdomain_name  = "maintenance.example.com"
+```
+
+3. 배포 후 확인:
+```bash
+# DNS 조회
+dig maintenance.example.com
+
+# CNAME 레코드 확인
+dig maintenance.example.com CNAME
+# 결과: storage-account.z12.web.core.windows.net
+```
+
+## 아키텍처
+
+```
+┌─────────────────────────────────────────┐
+│ Route53 (Optional)                      │
+│                                         │
+│ maintenance.example.com (CNAME)         │
+│         ↓                               │
+│ storage.z12.web.core.windows.net        │
+└─────────────────────────────────────────┘
+                  ↓
+┌─────────────────────────────────────────┐
+│ Azure Storage Account (Static Website) │
+│                                         │
+│ - Blob: $web/index.html                 │
+│ - 점검 페이지 (HTML)                    │
+└─────────────────────────────────────────┘
+```
+
+**주요 변경사항:**
+- Application Gateway 제거 (비용 절감)
+- Route53 CNAME으로 Blob Container 직접 연결
+- HTTPS는 Blob Storage 기본 제공 (*.z12.web.core.windows.net)
+
 ## 주의사항
 
 1. **Storage Account 이름은 전역 고유**해야 함
@@ -72,15 +151,19 @@ az storage blob list \
    az account show --query "{subscriptionId:id, tenantId:tenantId}"
    ```
 
-3. **점검 페이지는 HTTP만 지원**
-   - HTTPS 필요 시 Azure CDN 추가 필요
-   - 또는 2-emergency에서 Application Gateway 사용
+3. **Blob Static Website는 HTTPS 지원**
+   - Azure 기본 제공: https://storage-account.z12.web.core.windows.net
+   - 커스텀 도메인 HTTPS는 Azure CDN 필요 (추가 비용)
+
+4. **Route53 CNAME 제한사항**
+   - HTTPS 사용 시 인증서 경고 발생 가능 (커스텀 도메인)
+   - HTTP로 사용하거나, Azure CDN으로 HTTPS 설정 필요
 
 ## 다음 단계
 
 재해 발생 시:
 ```bash
-cd ../2-emergency
+cd ../3-failover
 terraform apply
 ```
 
@@ -88,4 +171,5 @@ terraform apply
 
 - Storage Account: ~$5/월
 - VNet/Subnets: $0 (예약만)
+- Route53 CNAME: $0 (기존 Hosted Zone 사용)
 - **총: ~$5/월**

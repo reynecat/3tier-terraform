@@ -71,10 +71,3 @@ rds_multi_az              = true
 rds_skip_final_snapshot   = true
 rds_deletion_protection   = false
 
-# =================================================
-# Route53 설정
-# =================================================
-
-enable_custom_domain = true
-domain_name          = ""
-create_hosted_zone   = true

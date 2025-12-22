@@ -214,19 +214,3 @@ variable "enable_backup_instance" {
 
 
 
-# =================================================
-# Route53 & Custom Domain
-# =================================================
-
-variable "enable_custom_domain" {
-  description = "커스텀 도메인 활성화"
-  type        = bool
-  default     = true
-}
-
-variable "domain_name" {
-  description = "도메인 이름"
-  type        = string
-}
-
-

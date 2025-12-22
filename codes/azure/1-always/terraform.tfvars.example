@@ -1,33 +1,16 @@
-# PlanB/azure/1-always/terraform.tfvars
+# Azure 인증 정보
+subscription_id = "your-azure-subscription-id"
+tenant_id       = "your-azure-tenant-id"
 
+# Storage Account 설정
+storage_account_name = "drbackupprod2"  # 전역 고유 이름 (소문자+숫자, 3-24자)
+
+# Route53 설정 (옵션 - 도메인이 있는 경우)
+enable_route53  = true                     # true로 변경하여 활성화
+aws_region      = "us-east-1"
+domain_name     = "example.com"             # Route53 호스팅 존 도메인
+subdomain_name  = "maintenance.example.com" # 점검 페이지 서브도메인
+
+# 환경 설정 (선택사항)
 environment = "blue"
 location    = "koreacentral"
-
-# Storage Account
-storage_account_name      = "bloberry01"  # 전역 고유 이름으로 변경 필요
-backup_container_name     = "mysql-backups"
-backup_retention_days     = 30
-storage_replication_type  = "LRS"
-
-# Network
-vnet_cidr       = "172.16.0.0/16"
-web_subnet_cidr = "172.16.11.0/24"
-was_subnet_cidr = "172.16.21.0/24"
-db_subnet_cidr  = "172.16.31.0/24"
-aks_subnet_cidr = "172.16.41.0/24"
-appgw_subnet_cidr = "172.16.1.0/24"
-
-# Azure 구독 정보
-subscription_id = "YOUR_SUBSCRIPTION_ID"  # az account show --query id -o tsv
-tenant_id       = "YOUR_TENANT_ID"        # az account show --query tenantId -o tsv
-
-# Tags
-tags = {
-  Environment = "Production"
-  DRPlan      = "Plan-B-Pilot-Light"
-  ManagedBy   = "Terraform"
-  Purpose     = "Disaster-Recovery"
-  Team        = "I2ST"
-}
-
-admin_ssh_public_key = ""

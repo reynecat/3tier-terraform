@@ -67,46 +67,56 @@ output "aks_subnet_id" {
   value       = azurerm_subnet.aks.id
 }
 
-output "appgw_subnet_id" {
-  description = "App Gateway Subnet ID"
-  value       = azurerm_subnet.appgw.id
+output "route53_subdomain" {
+  description = "Route53 서브도메인 (활성화된 경우)"
+  value       = var.enable_route53 ? var.subdomain_name : "Route53 비활성화"
+}
+
+output "route53_cname_target" {
+  description = "Route53 CNAME 타겟"
+  value       = "${var.storage_account_name}.z12.web.core.windows.net"
 }
 
 output "deployment_summary" {
   description = "배포 요약"
   value = <<-EOT
-  
+
   ========================================
   PlanB Azure 1-always 배포 완료
   ========================================
-  
+
   Resource Group: ${azurerm_resource_group.main.name}
   Location: ${azurerm_resource_group.main.location}
-  
+
   Storage Account:
     - Name: ${azurerm_storage_account.backups.name}
     - 백업 Container: ${var.backup_container_name}
     - 점검 페이지: https://${azurerm_storage_account.backups.name}.z12.web.core.windows.net/
-  
+
+  Route53 설정:
+    - 활성화: ${var.enable_route53}
+    - 서브도메인: ${var.enable_route53 ? var.subdomain_name : "비활성화"}
+    - CNAME 타겟: ${var.storage_account_name}.z12.web.core.windows.net
+
   네트워크 (예약됨):
     - VNet: ${azurerm_virtual_network.main.name} (${var.vnet_cidr})
     - Web Subnet: ${azurerm_subnet.web.name}
     - WAS Subnet: ${azurerm_subnet.was.name}
     - DB Subnet: ${azurerm_subnet.db.name}
     - AKS Subnet: ${azurerm_subnet.aks.name}
-    - AppGW Subnet: ${azurerm_subnet.appgw.name}
-  
+
   점검 페이지 확인:
     curl https://${azurerm_storage_account.backups.name}.z12.web.core.windows.net/
-  
+    ${var.enable_route53 ? "curl https://${var.subdomain_name}/" : ""}
+
   백업 확인:
-    az storage blob list \\
-      --account-name ${azurerm_storage_account.backups.name} \\
-      --container-name ${var.backup_container_name} \\
+    az storage blob list \
+      --account-name ${azurerm_storage_account.backups.name} \
+      --container-name ${var.backup_container_name} \
       --output table
-  
+
   월 예상 비용: ~$5 (Storage Account)
-  
+
   ========================================
   EOT
 }

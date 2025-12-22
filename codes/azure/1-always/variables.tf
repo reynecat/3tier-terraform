@@ -15,7 +15,7 @@ variable "location" {
 variable "storage_account_name" {
   description = "Storage Account 이름 (전역 고유, 소문자+숫자, 3-24자)"
   type        = string
-  
+
   validation {
     condition     = can(regex("^[a-z0-9]{3,24}$", var.storage_account_name))
     error_message = "Storage Account 이름은 소문자와 숫자만 사용, 3-24자여야 합니다."
@@ -38,7 +38,7 @@ variable "storage_replication_type" {
   description = "Storage 복제 타입"
   type        = string
   default     = "LRS"
-  
+
   validation {
     condition     = contains(["LRS", "GRS", "RAGRS", "ZRS"], var.storage_replication_type)
     error_message = "유효한 복제 타입: LRS, GRS, RAGRS, ZRS"
@@ -75,12 +75,6 @@ variable "aks_subnet_cidr" {
   default     = "172.16.41.0/24"
 }
 
-variable "appgw_subnet_cidr" {
-  description = "Application Gateway Subnet CIDR"
-  type        = string
-  default     = "172.16.1.0/24"
-}
-
 variable "subscription_id" {
   description = "Azure 구독 ID"
   type        = string
@@ -91,6 +85,31 @@ variable "tenant_id" {
   description = "Azure 테넌트 ID"
   type        = string
   sensitive   = true
+}
+
+# Route53 관련 변수
+variable "aws_region" {
+  description = "AWS 리전 (Route53용)"
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "enable_route53" {
+  description = "Route53 CNAME 레코드 생성 여부"
+  type        = bool
+  default     = false
+}
+
+variable "domain_name" {
+  description = "Route53 호스팅 존 도메인 이름 (예: example.com)"
+  type        = string
+  default     = ""
+}
+
+variable "subdomain_name" {
+  description = "Azure 점검 페이지 서브도메인 (예: maintenance.example.com)"
+  type        = string
+  default     = ""
 }
 
 variable "tags" {

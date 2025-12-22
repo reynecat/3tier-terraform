@@ -1,11 +1,15 @@
 # PlanB/azure/1-always/main.tf
-# 평상시 항상 실행: Storage Account (백업용)
+# 평상시 항상 실행: Storage Account (백업용 + 점검 페이지) + Route53 CNAME
 
 terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
       version = "~> 3.0"
+    }
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
     }
   }
 }
@@ -14,6 +18,10 @@ provider "azurerm" {
   features {}
   subscription_id = var.subscription_id
   tenant_id       = var.tenant_id
+}
+
+provider "aws" {
+  region = var.aws_region
 }
 
 # =================================================
@@ -59,7 +67,7 @@ resource "azurerm_subnet" "db" {
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = [var.db_subnet_cidr]
-  
+
   delegation {
     name = "mysql-delegation"
     service_delegation {
@@ -78,15 +86,8 @@ resource "azurerm_subnet" "aks" {
   address_prefixes     = [var.aks_subnet_cidr]
 }
 
-resource "azurerm_subnet" "appgw" {
-  name                 = "snet-appgw"
-  resource_group_name  = azurerm_resource_group.main.name
-  virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = [var.appgw_subnet_cidr]
-}
-
 # =================================================
-# Storage Account (백업용 - 항상 실행)
+# Storage Account (백업용 + 점검 페이지 - 항상 실행)
 # =================================================
 
 resource "azurerm_storage_account" "backups" {
@@ -97,12 +98,12 @@ resource "azurerm_storage_account" "backups" {
   account_replication_type = var.storage_replication_type
 
   https_traffic_only_enabled = false
-  
+
   # Static Website 기능 활성화
   static_website {
     index_document = "index.html"
   }
-  
+
   blob_properties {
     versioning_enabled = true
   }
@@ -126,16 +127,16 @@ resource "azurerm_storage_container" "mysql_backups" {
 
 resource "azurerm_storage_management_policy" "backup_lifecycle" {
   storage_account_id = azurerm_storage_account.backups.id
-  
+
   rule {
     name    = "deleteOldBackups"
     enabled = true
-    
+
     filters {
       prefix_match = ["${var.backup_container_name}/backups/"]
       blob_types   = ["blockBlob"]
     }
-    
+
     actions {
       base_blob {
         delete_after_days_since_modification_greater_than = var.backup_retention_days
@@ -154,7 +155,7 @@ resource "azurerm_storage_blob" "maintenance_page" {
   storage_container_name = "$web"
   type                   = "Block"
   content_type           = "text/html"
-  
+
   source_content = <<HTML
 <!DOCTYPE html>
 <html lang="ko">
@@ -168,7 +169,7 @@ resource "azurerm_storage_blob" "maintenance_page" {
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -178,7 +179,7 @@ resource "azurerm_storage_blob" "maintenance_page" {
             justify-content: center;
             padding: 20px;
         }
-        
+
         .container {
             background: white;
             border-radius: 20px;
@@ -189,7 +190,7 @@ resource "azurerm_storage_blob" "maintenance_page" {
             text-align: center;
             animation: fadeIn 0.5s ease-in;
         }
-        
+
         @keyframes fadeIn {
             from {
                 opacity: 0;
@@ -200,13 +201,13 @@ resource "azurerm_storage_blob" "maintenance_page" {
                 transform: translateY(0);
             }
         }
-        
+
         .icon {
             font-size: 80px;
             margin-bottom: 30px;
             animation: pulse 2s infinite;
         }
-        
+
         @keyframes pulse {
             0%, 100% {
                 transform: scale(1);
@@ -215,28 +216,28 @@ resource "azurerm_storage_blob" "maintenance_page" {
                 transform: scale(1.1);
             }
         }
-        
+
         h1 {
             color: #333;
             font-size: 32px;
             margin-bottom: 20px;
             font-weight: 600;
         }
-        
+
         .subtitle {
             color: #666;
             font-size: 18px;
             margin-bottom: 30px;
             line-height: 1.6;
         }
-        
+
         .info-box {
             background: #f8f9fa;
             padding: 20px;
             border-radius: 10px;
             margin-top: 30px;
         }
-        
+
         .info-item {
             display: flex;
             justify-content: space-between;
@@ -244,21 +245,21 @@ resource "azurerm_storage_blob" "maintenance_page" {
             padding: 10px 0;
             border-bottom: 1px solid #dee2e6;
         }
-        
+
         .info-item:last-child {
             border-bottom: none;
         }
-        
+
         .info-label {
             color: #6c757d;
             font-weight: 600;
         }
-        
+
         .info-value {
             color: #333;
             font-weight: 500;
         }
-        
+
         .status-badge {
             display: inline-block;
             padding: 8px 16px;
@@ -268,7 +269,7 @@ resource "azurerm_storage_blob" "maintenance_page" {
             font-weight: 600;
             margin: 20px 0;
         }
-        
+
         .progress-bar {
             width: 100%;
             height: 6px;
@@ -277,13 +278,13 @@ resource "azurerm_storage_blob" "maintenance_page" {
             overflow: hidden;
             margin-top: 20px;
         }
-        
+
         .progress-bar-fill {
             height: 100%;
             background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
             animation: progress 3s ease-in-out infinite;
         }
-        
+
         @keyframes progress {
             0% {
                 width: 0%;
@@ -305,13 +306,13 @@ resource "azurerm_storage_blob" "maintenance_page" {
             더 나은 서비스를 제공하기 위해<br>
             시스템 점검을 진행하고 있습니다
         </p>
-        
+
         <div class="status-badge">DR 사이트 대기 중</div>
-        
+
         <div class="progress-bar">
             <div class="progress-bar-fill"></div>
         </div>
-        
+
         <div class="info-box">
             <div class="info-item">
                 <span class="info-label">환경</span>
@@ -327,7 +328,7 @@ resource "azurerm_storage_blob" "maintenance_page" {
             </div>
         </div>
     </div>
-    
+
     <script>
         // 자동 새로고침 (5분마다)
         setTimeout(() => {
@@ -341,4 +342,26 @@ HTML
   depends_on = [azurerm_storage_account.backups]
 }
 
+# =================================================
+# Route53 - Subdomain CNAME to Blob Container
+# =================================================
 
+# Data Source - Route53 Hosted Zone
+data "aws_route53_zone" "main" {
+  count = var.enable_route53 ? 1 : 0
+
+  name         = var.domain_name
+  private_zone = false
+}
+
+# CNAME Record - 서브도메인을 Blob Static Website로 직접 연결
+resource "aws_route53_record" "azure_maintenance" {
+  count = var.enable_route53 ? 1 : 0
+
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = var.subdomain_name
+  type    = "CNAME"
+  ttl     = 300
+
+  records = ["${var.storage_account_name}.z12.web.core.windows.net"]
+}

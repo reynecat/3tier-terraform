@@ -1,0 +1,26 @@
+# Azure 인증 정보
+subscription_id = "your-azure-subscription-id"
+tenant_id       = "your-azure-tenant-id"
+
+# 1-always에서 생성된 리소스 참조
+resource_group_name  = "rg-dr-prod"
+vnet_name           = "vnet-dr-prod"
+storage_account_name = "drbackupprod2024"  # 1-always와 동일
+
+# MySQL 설정
+db_password = "your-secure-mysql-password"  # 강력한 비밀번호 설정
+
+# 환경 설정 (선택사항)
+environment = "prod"
+
+# MySQL 설정 (선택사항 - 기본값 사용 가능)
+# db_username     = "mysqladmin"
+# mysql_sku       = "B_Standard_B2s"
+# mysql_storage_gb = 20
+
+# AKS 설정 (선택사항 - 기본값 사용 가능)
+# kubernetes_version = "1.28"
+# node_count         = 2
+# node_min_count     = 2
+# node_max_count     = 5
+# node_vm_size       = "Standard_D2s_v3"

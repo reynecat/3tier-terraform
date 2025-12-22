@@ -1,0 +1,31 @@
+# aws/route53/terraform.tfvars.example
+# Route53 Failover 설정 예시
+
+# =================================================
+# 기본 설정
+# =================================================
+aws_region  = "ap-northeast-2"
+environment = "blue"
+
+# =================================================
+# Route53 & Domain
+# =================================================
+enable_custom_domain = true
+domain_name          = "example.com"  # 실제 도메인으로 변경
+
+# =================================================
+# AWS Primary Site (EKS ALB)
+# =================================================
+# Option 1: EKS 클러스터 이름으로 ALB 자동 검색
+eks_cluster_name = "blue-eks-cluster"  # aws/service의 EKS 클러스터 이름
+
+# Option 2: ALB 정보를 직접 입력 (aws/service 배포 후)
+# aws/service 배포 후 terraform output으로 확인한 값을 입력
+# alb_dns_name = "k8s-web-webingre-xxxxxxxxxxxxx.elb.ap-northeast-2.amazonaws.com"
+# alb_zone_id  = "ZXXXXXXXXXXXXX"
+
+# =================================================
+# Azure Secondary Site (Application Gateway)
+# =================================================
+# azure/2-failover 배포 후 terraform output으로 확인한 Public IP 입력
+# azure_appgw_public_ip = "20.196.XXX.XXX"
