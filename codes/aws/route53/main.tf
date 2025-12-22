@@ -45,8 +45,9 @@ data "aws_acm_certificate" "main" {
 }
 
 # ALB 정보를 가져오기 (EKS Ingress가 생성한 ALB)
+# alb_dns_name이 비어있을 때만 태그로 검색
 data "aws_lb" "ingress_alb" {
-  count = var.enable_custom_domain && var.alb_dns_name != "" ? 1 : 0
+  count = var.enable_custom_domain && var.alb_dns_name == "" && var.eks_cluster_name != "" ? 1 : 0
 
   tags = {
     "elbv2.k8s.aws/cluster" = var.eks_cluster_name

@@ -230,6 +230,11 @@ resource "aws_secretsmanager_secret" "backup_credentials" {
   tags = {
     Name = "backup-credentials"
   }
+
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "backup_credentials" {

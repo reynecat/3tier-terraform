@@ -109,16 +109,13 @@ module "rds" {
 data "aws_caller_identity" "current" {}
 
 # OIDC Provider for EKS (IAM Role 연동용)
-#data "tls_certificate" "eks" {
-#  url = module.eks.cluster_endpoint
-#}
+resource "aws_iam_openid_connect_provider" "eks" {
+  client_id_list  = ["sts.amazonaws.com"]
+  # EKS OIDC thumbprint (ap-northeast-2 리전의 고정값)
+  thumbprint_list = ["9e99a48a9960b14926bb7f3b02e22da2b0ab7280"]
+  url             = module.eks.oidc_provider_url
 
-#resource "aws_iam_openid_connect_provider" "eks" {
-#  client_id_list  = ["sts.amazonaws.com"]
-#  thumbprint_list = [data.tls_certificate.eks.certificates[0].sha1_fingerprint]
-#  url             = module.eks.cluster_endpoint
-
-#  tags = {
-#    Name = "${var.environment}-eks-oidc"
-#  }
-#} 
+  tags = {
+    Name = "${var.environment}-eks-oidc"
+  }
+} 

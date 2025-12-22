@@ -133,7 +133,7 @@ aws route53 get-health-check-status --health-check-id <primary-health-check-id>
 ### 5단계: Azure Failover 사이트 배포
 
 ```bash
-cd ../../../azure/2-failover
+cd ../../codes/azure/2-failover
 terraform init
 terraform apply
 

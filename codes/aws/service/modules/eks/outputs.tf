@@ -35,3 +35,13 @@ output "was_node_group_id" {
   description = "WAS Tier 노드 그룹 ID"
   value       = aws_eks_node_group.was.id
 }
+
+output "oidc_provider_url" {
+  description = "EKS OIDC Provider URL"
+  value       = aws_eks_cluster.main.identity[0].oidc[0].issuer
+}
+
+output "oidc_provider_arn" {
+  description = "EKS OIDC Provider ARN"
+  value       = aws_eks_cluster.main.identity[0].oidc[0].issuer
+}

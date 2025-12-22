@@ -22,7 +22,7 @@ eks_cluster_name = "blue-eks-cluster"  # aws/service의 EKS 클러스터 이름
 # Option 2: ALB 정보를 직접 입력 (aws/service 배포 후)
 # aws/service 배포 후 terraform output으로 확인한 값을 입력
 # alb_dns_name = "k8s-web-webingre-xxxxxxxxxxxxx.elb.ap-northeast-2.amazonaws.com"
-# alb_zone_id  = "ZXXXXXXXXXXXXX"
+# alb_zone_id  = "Z3JE5OI70TWKCP"
 
 # =================================================
 # Azure Secondary Site (Application Gateway)

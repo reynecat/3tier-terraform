@@ -8,12 +8,10 @@ EKS 클러스터에 애플리케이션을 배포하기 위한 매니페스트 �
 ```bash
 cd scripts
 ./install-lb-controller.sh
+
+k8s-manifests$ kubectl apply -f namespaces.yaml
 ```
 
-### 2. 애플리케이션 배포
-```bash
-./deploy-app.sh
-```
 
 배포 시 입력 필요:
 - RDS Endpoint: Terraform output에서 확인
