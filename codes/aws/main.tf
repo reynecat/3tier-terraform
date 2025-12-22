@@ -121,4 +121,4 @@ data "aws_caller_identity" "current" {}
 #  tags = {
 #    Name = "${var.environment}-eks-oidc"
 #  }
-#}
+#} 
