@@ -12,7 +12,7 @@ echo ""
 
 # 변수 설정
 CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
-DOMAIN=$(terraform output -raw domain_name)
+DOMAIN="blueisthenewblack.store"
 PRIMARY_HC=$(terraform output -json route53_health_check_ids | jq -r '.primary')
 SECONDARY_HC=$(terraform output -json route53_health_check_ids | jq -r '.secondary')
 
