@@ -25,6 +25,21 @@ provider "aws" {
   }
 }
 
+# CloudFront requires ACM certificates in us-east-1
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+
+  default_tags {
+    tags = {
+      Environment = var.environment
+      Project     = "Multi-Cloud-DR"
+      ManagedBy   = "Terraform"
+      Component   = "Route53-Failover"
+    }
+  }
+}
+
 # =================================================
 # Data Sources
 # =================================================
@@ -39,6 +54,7 @@ data "aws_route53_zone" "main" {
 data "aws_acm_certificate" "main" {
   count = var.enable_custom_domain ? 1 : 0
 
+  provider    = aws.us_east_1
   domain      = var.domain_name
   statuses    = ["ISSUED"]
   most_recent = true
@@ -68,86 +84,144 @@ locals {
 }
 
 # =================================================
-# Health Checks
+# CloudFront Distribution (Origin Failover)
 # =================================================
 
-# Primary Health Check: ALB HTTP 체크
-resource "aws_route53_health_check" "primary" {
+# CloudFront with Origin Failover
+# Primary Origin: AWS ALB
+# Secondary Origin: Azure Blob Storage → App Gateway (장애 장기화 시)
+
+resource "aws_cloudfront_distribution" "main" {
   count = var.enable_custom_domain && local.alb_dns_name != null ? 1 : 0
 
-  type              = "HTTP"
-  resource_path     = "/"
-  fqdn              = local.alb_dns_name
-  port              = 80
-  failure_threshold = 3
-  request_interval  = 30
+  enabled             = true
+  is_ipv6_enabled     = true
+  comment             = "Multi-Cloud DR with Origin Failover"
+  default_root_object = ""
+  aliases             = [var.domain_name]
 
-  tags = {
-    Name        = "${var.domain_name}-primary-alb-http"
-    Environment = var.environment
+  # Origin Group - Automatic Failover
+  origin_group {
+    origin_id = "multi-cloud-failover-group"
+
+    failover_criteria {
+      status_codes = [500, 502, 503, 504]
+    }
+
+    member {
+      origin_id = "primary-aws-alb"
+    }
+
+    member {
+      origin_id = "secondary-azure"
+    }
   }
-}
 
-# Secondary Health Check: Azure App Gateway
-resource "aws_route53_health_check" "secondary" {
-  count = var.enable_custom_domain && var.azure_appgw_public_ip != "" ? 1 : 0
+  # Primary Origin: AWS ALB
+  origin {
+    domain_name = local.alb_dns_name
+    origin_id   = "primary-aws-alb"
 
-  type              = "HTTP"
-  ip_address        = var.azure_appgw_public_ip
-  port              = 80
-  resource_path     = "/"
-  failure_threshold = 3
-  request_interval  = 30
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+
+    custom_header {
+      name  = "X-Forwarded-Host"
+      value = var.domain_name
+    }
+  }
+
+  # Secondary Origin: Azure Blob Storage (초기) / App Gateway (장애 장기화)
+  # lifecycle ignore_changes로 수동 변경 가능
+  origin {
+    domain_name = "${var.azure_storage_account_name}.z12.web.core.windows.net"
+    origin_id   = "secondary-azure"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+
+    custom_header {
+      name  = "X-Forwarded-Host"
+      value = var.domain_name
+    }
+  }
+
+  # Default Cache Behavior - Origin Group 사용
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "multi-cloud-failover-group"
+
+    forwarded_values {
+      query_string = true
+      headers      = ["Host", "CloudFront-Forwarded-Proto", "Origin"]
+
+      cookies {
+        forward = "all"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+    compress               = true
+  }
+
+  # Price Class
+  price_class = "PriceClass_100"
+
+  # Geo Restriction
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  # SSL Certificate (ACM)
+  viewer_certificate {
+    cloudfront_default_certificate = length(data.aws_acm_certificate.main) > 0 ? false : true
+    acm_certificate_arn            = length(data.aws_acm_certificate.main) > 0 ? data.aws_acm_certificate.main[0].arn : null
+    ssl_support_method             = length(data.aws_acm_certificate.main) > 0 ? "sni-only" : null
+    minimum_protocol_version       = "TLSv1.2_2021"
+  }
 
   tags = {
-    Name        = "${var.domain_name}-secondary-azure"
+    Name        = "${var.domain_name}-cloudfront-dr"
     Environment = var.environment
+    Purpose     = "Multi-Cloud-DR-Failover"
+  }
+
+  lifecycle {
+    ignore_changes = [
+      origin
+    ]
   }
 }
 
 # =================================================
-# Failover Records
+# Route53 Record - CloudFront Alias
 # =================================================
 
-# Primary Record: AWS ALB
-resource "aws_route53_record" "primary" {
+# Route53 A Record pointing to CloudFront
+resource "aws_route53_record" "main" {
   count = var.enable_custom_domain && local.alb_dns_name != null ? 1 : 0
 
   zone_id = local.hosted_zone_id
   name    = var.domain_name
   type    = "A"
-
-  set_identifier = "Primary-AWS-ALB"
 
   alias {
-    name                   = local.alb_dns_name
-    zone_id                = local.alb_zone_id
+    name                   = aws_cloudfront_distribution.main[0].domain_name
+    zone_id                = aws_cloudfront_distribution.main[0].hosted_zone_id
     evaluate_target_health = false
   }
-
-  failover_routing_policy {
-    type = "PRIMARY"
-  }
-
-  health_check_id = aws_route53_health_check.primary[0].id
-}
-
-# Secondary Record: Azure App Gateway
-resource "aws_route53_record" "secondary" {
-  count = var.enable_custom_domain && var.azure_appgw_public_ip != "" ? 1 : 0
-
-  zone_id = local.hosted_zone_id
-  name    = var.domain_name
-  type    = "A"
-  ttl     = 60
-
-  records = [var.azure_appgw_public_ip]
-
-  set_identifier = "Secondary-Azure-AppGW"
-
-  failover_routing_policy {
-    type = "SECONDARY"
-  }
-
-  health_check_id = aws_route53_health_check.secondary[0].id
 }

@@ -38,15 +38,36 @@ output "aks_kubeconfig_command" {
   value       = "az aks get-credentials --resource-group ${var.resource_group_name} --name ${azurerm_kubernetes_cluster.main.name}"
 }
 
+# Application Gateway Outputs
+output "appgw_public_ip" {
+  description = "Application Gateway Public IP (Route53 Secondary에 입력)"
+  value       = azurerm_public_ip.appgw.ip_address
+}
+
+output "appgw_name" {
+  description = "Application Gateway 이름"
+  value       = azurerm_application_gateway.main.name
+}
+
+output "appgw_id" {
+  description = "Application Gateway ID"
+  value       = azurerm_application_gateway.main.id
+}
+
+output "resource_group_name" {
+  description = "Resource Group 이름"
+  value       = data.azurerm_resource_group.main.name
+}
+
 output "deployment_summary" {
   description = "배포 요약"
   value = <<-EOT
 
   ========================================
-  PlanB Azure 3-failover 배포 완료
+  PlanB Azure 2-failover 배포 완료
   ========================================
 
-  재해 대응: MySQL + AKS + PetClinic 배포
+  재해 대응: MySQL + AKS + Application Gateway
 
   MySQL:
     - Server: ${azurerm_mysql_flexible_server.main.name}
@@ -58,6 +79,12 @@ output "deployment_summary" {
     - Kubernetes: ${var.kubernetes_version}
     - Nodes: ${var.node_count} (min: ${var.node_min_count}, max: ${var.node_max_count})
     - VM Size: ${var.node_vm_size}
+
+  Application Gateway:
+    - Name: ${azurerm_application_gateway.main.name}
+    - Public IP: ${azurerm_public_ip.appgw.ip_address}
+    - Backend: Blob Storage (초기)
+    - 상태: 점검 페이지 제공 중
 
   다음 단계:
     1. MySQL 백업 복구
@@ -71,12 +98,23 @@ output "deployment_summary" {
        cd scripts
        ./deploy-petclinic.sh
 
-    4. 서비스 확인
-       kubectl get pods -A
-       kubectl get svc -A
+    4. App Gateway를 AKS로 전환
+       cd scripts
+       ./update-appgw.sh
 
-    5. Route53 업데이트 (도메인 있을 경우)
-       메인 도메인을 AKS LoadBalancer IP로 업데이트
+    5. Route53 Secondary 업데이트
+       App Gateway Public IP를 Route53에 등록:
+       ${azurerm_public_ip.appgw.ip_address}
+
+       codes/aws/route53/terraform.tfvars 수정:
+       azure_appgw_public_ip = "${azurerm_public_ip.appgw.ip_address}"
+
+       cd ../../../aws/route53
+       terraform apply
+
+  트래픽 흐름:
+    - 초기: User → App Gateway → Blob Storage (점검 페이지)
+    - 전환 후: User → App Gateway → AKS LoadBalancer → Pods
 
   예상 배포 시간: 15-20분
 

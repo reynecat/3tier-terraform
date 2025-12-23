@@ -54,11 +54,17 @@ variable "alb_zone_id" {
 }
 
 # =================================================
-# Azure Secondary Site (Application Gateway)
+# Azure Secondary Site (Blob Storage / Application Gateway)
 # =================================================
 
+variable "azure_storage_account_name" {
+  description = "Azure Storage Account 이름 (1-always에서 생성)"
+  type        = string
+  default     = "bloberry01"
+}
+
 variable "azure_appgw_public_ip" {
-  description = "Azure Application Gateway Public IP (azure/2-failover 배포 후 입력)"
+  description = "Azure Application Gateway Public IP (장애 장기화 시 CloudFront Origin 수동 변경용)"
   type        = string
   default     = ""
 }
