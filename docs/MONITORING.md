@@ -1,4 +1,4 @@
-# AWS EKS 모니터링 가이드
+# AWS 인프라  모니터링 가이드
 
 ## 목차
 1. [개요](#개요)
@@ -12,7 +12,7 @@
 
 ## 개요
 
-이 프로젝트는 AWS CloudWatch와 Container Insights를 활용하여 EKS 클러스터, ALB, RDS, Route53 등 3-Tier 아키텍처의 모든 구성 요소를 종합적으로 모니터링합니다.
+AWS CloudWatch와 Container Insights를 활용하여 프로젝트에서 구축한 인프라를 
 
 ### 모니터링 목적
 - **가용성 보장**: 시스템 장애를 조기에 감지하고 자동 복구
@@ -565,23 +565,6 @@ Lambda 함수는 다음 권한을 가집니다:
 - **월간**: 리소스 사용 추세 분석 및 용량 계획 수립
 - **분기**: 모니터링 지표 추가/제거 검토
 
----
-
-## 비용 최적화
-
-### CloudWatch 비용 요소
-1. **메트릭 수집**: Container Insights 메트릭 ($0.30/메트릭/월)
-2. **로그 수집**: 로그 수집 및 저장 비용
-3. **알람**: 알람당 비용 ($0.10/알람/월)
-4. **대시보드**: 대시보드당 비용 ($3/대시보드/월)
-
-### 비용 절감 팁
-- 불필요한 메트릭 비활성화
-- 로그 보존 기간 최적화 (중요도에 따라 7~30일)
-- 알람 평가 주기 조정 (1분 → 5분으로 변경 시 비용 절감)
-- 개발/스테이징 환경은 최소한의 모니터링만 활성화
-
----
 
 ## 참고 자료
 
@@ -595,20 +578,4 @@ Lambda 함수는 다음 권한을 가집니다:
 - [CloudWatch Alarms](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/AlarmThatSendsEmail.html)
 - [Route53 Health Checks](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/health-checks-creating.html)
 
-### 임계값 참고 기준
 
-| 메트릭 | 권장 임계값 | 프로젝트 기본값 |
-|--------|-------------|-----------------|
-| Node CPU | 70-80% | 80% |
-| Node Memory | 75-85% | 80% |
-| Pod CPU | 80-90% | 85% |
-| Pod Memory | 80-90% | 85% |
-| RDS CPU | 75-80% | 80% |
-| ALB Latency (p95) | 1-3초 | 2.0초 |
-| Pod Restart | 3-5회 | 5회 |
-
----
-
-## 문의 및 지원
-
-모니터링 관련 문의사항이나 개선 제안은 이슈 트래커를 통해 제출해 주시기 바랍니다.

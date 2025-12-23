@@ -1,5 +1,3 @@
-# PlanB 재해 복구 시스템 사용자 가이드
-
 **Multi-Cloud Disaster Recovery Solution**  
 AWS (Primary) ↔ Azure (Secondary DR)
 
@@ -14,7 +12,7 @@ AWS (Primary) ↔ Azure (Secondary DR)
 5. [2단계: 완전 복구 (2-failover)](#5-2단계-완전-복구-2-failover)
 6. [장애 시뮬레이션 테스트](#6-장애-시뮬레이션-테스트)
 7. [Failback 절차](#7-failback-절차)
-8. [트러블슈팅](#8-트러블슈팅)
+8. [참고 문서](#8-참고-문서)
 
 ---
 
@@ -153,7 +151,6 @@ cd 3tier-terraform
 
 ## 3. 1단계: 평상시 대기 (1-always)
 
-**목적**: 최소 비용으로 Azure에 백업 인프라 준비
 
 ### 3.1 설정 파일 작성
 
@@ -352,7 +349,7 @@ kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-cont
 # aws-load-balancer-controller-xxx-yyy           1/1     Running   0          2m
 ```
 
-**문제 발생 시**: [트러블슈팅 섹션](#9-트러블슈팅) 참조
+**문제 발생 시**: [트러블슈팅 가이드](docs/troubleshooting.md) 참조
 
 ### 4.5 PetClinic 애플리케이션 배포
 
@@ -453,7 +450,6 @@ echo "URL: http://$ALB_DNS"
 # 브라우저 접속 또는 curl
 curl -I http://$ALB_DNS
 
-#만약 잘 안되면?
 
 
 ```
@@ -514,7 +510,7 @@ echo "https://yourdomain.com"
 
 ### 4.7 Monitoring 설정 (선택사항)
 
-CloudWatch 모니터링을 설정합니다.
+CloudWatch 모니터링을 설정
 
 ```bash
 cd ~/3tier-terraform/codes/aws/monitoring
@@ -612,7 +608,7 @@ mysql_sku        = "B_Standard_B2s"
 mysql_storage_gb = 20
 ```
 
-### 5.3 배포 (T+0 ~ T+20분)
+### 5.3 배포
 
 ```bash
 # 초기화
@@ -1058,266 +1054,13 @@ terraform destroy
 
 ---
 
-## 8. 트러블슈팅
+## 8. 참고 문서
 
-### 8.1 AWS Load Balancer Controller 설치 실패
+### 상세 가이드
+- [트러블슈팅 가이드](docs/troubleshooting.md) - 문제 발생 시 해결 방법
+- [모니터링 가이드](docs/MONITORING.md) - CloudWatch 설정 및 모니터링
 
-#### 증상
-```
-aws-load-balancer-controller   0/2     0            0
-```
-
-#### 원인
-- ServiceAccount가 없음
-- IAM Role 설정 오류
-- OIDC Provider 미설정
-
-#### 해결
-```bash
-cd ~/3tier-terraform/codes/aws/service
-
-# 1. 변수 확인
-export CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
-export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
-echo "Cluster: $CLUSTER_NAME"
-echo "Account: $ACCOUNT_ID"
-
-# 2. OIDC Provider 설정
-eksctl utils associate-iam-oidc-provider \
-  --region ap-northeast-2 \
-  --cluster $CLUSTER_NAME \
-  --approve
-
-# 3. IAM Policy 확인/생성
-if ! aws iam get-policy --policy-arn arn:aws:iam::${ACCOUNT_ID}:policy/AWSLoadBalancerControllerIAMPolicy &>/dev/null; then
-    curl -o /tmp/iam-policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.0/docs/install/iam_policy.json
-    aws iam create-policy \
-        --policy-name AWSLoadBalancerControllerIAMPolicy \
-        --policy-document file:///tmp/iam-policy.json
-fi
-
-# 4. ServiceAccount 수동 생성
-export OIDC_PROVIDER=$(aws eks describe-cluster \
-  --name $CLUSTER_NAME \
-  --region ap-northeast-2 \
-  --query "cluster.identity.oidc.issuer" \
-  --output text | sed -e "s/^https:\/\///")
-
-export ROLE_NAME="AWSLoadBalancerControllerRole-$(date +%s)"
-
-cat > /tmp/trust-policy.json <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Principal": {
-      "Federated": "arn:aws:iam::${ACCOUNT_ID}:oidc-provider/${OIDC_PROVIDER}"
-    },
-    "Action": "sts:AssumeRoleWithWebIdentity",
-    "Condition": {
-      "StringEquals": {
-        "${OIDC_PROVIDER}:aud": "sts.amazonaws.com",
-        "${OIDC_PROVIDER}:sub": "system:serviceaccount:kube-system:aws-load-balancer-controller"
-      }
-    }
-  }]
-}
-EOF
-
-aws iam create-role \
-  --role-name $ROLE_NAME \
-  --assume-role-policy-document file:///tmp/trust-policy.json
-
-aws iam attach-role-policy \
-  --role-name $ROLE_NAME \
-  --policy-arn arn:aws:iam::${ACCOUNT_ID}:policy/AWSLoadBalancerControllerIAMPolicy
-
-export ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text)
-
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: aws-load-balancer-controller
-  namespace: kube-system
-  annotations:
-    eks.amazonaws.com/role-arn: ${ROLE_ARN}
-EOF
-
-# 5. Deployment 재시작
-kubectl rollout restart deployment aws-load-balancer-controller -n kube-system
-
-# 6. 확인
-kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-```
-
-### 8.2 WAS Pod CrashLoopBackOff
-
-#### 증상
-```
-was-spring-xxx   0/1     CrashLoopBackOff
-```
-
-#### 원인
-- DB 연결 실패 (비밀번호 불일치)
-- RDS 보안 그룹 설정 오류
-
-#### 해결
-```bash
-# 1. Pod 로그 확인
-kubectl logs -n was -l app=was-spring --tail=100
-
-# 2. Secret 확인
-kubectl get secret db-credentials -n was -o jsonpath='{.data.password}' | base64 -d
-echo
-
-# 3. 비밀번호가 틀렸다면 Secret 재생성
-kubectl delete secret db-credentials -n was
-
-export RDS_HOST=$(cd ~/3tier-terraform/codes/aws/service && terraform output -raw rds_address)
-
-kubectl create secret generic db-credentials \
-  --from-literal=url="jdbc:mysql://${RDS_HOST}:3306/petclinic" \
-  --from-literal=username="admin" \
-  --from-literal=password="MySecurePassword123!" \
-  --namespace=was
-
-# 4. Deployment 재시작
-kubectl rollout restart deployment was-spring -n was
-
-# 5. 로그 확인
-kubectl logs -f deployment/was-spring -n was
-```
-
-### 8.3 ALB 생성 안됨
-
-#### 증상
-```
-web-ingress   alb     *                 80      10m
-```
-(ADDRESS 비어있음)
-
-#### 원인
-- Public Subnet 태그 누락
-- HTTPS 설정 오류 (리스너 443 없음)
-
-#### 해결
-```bash
-# 1. Ingress 로그 확인
-kubectl describe ingress web-ingress -n web
-
-kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=100
-
-# 2. Public Subnet 태그 추가
-cd ~/3tier-terraform/codes/aws/service
-export VPC_ID=$(terraform output -raw vpc_id)
-export CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
-export PUBLIC_SUBNET_IDS=$(terraform output -json public_subnet_ids | jq -r '.[]')
-
-for SUBNET_ID in $PUBLIC_SUBNET_IDS; do
-  echo "Tagging subnet: $SUBNET_ID"
-  aws ec2 create-tags \
-    --resources $SUBNET_ID \
-    --tags \
-      Key=kubernetes.io/role/elb,Value=1 \
-      Key=kubernetes.io/cluster/${CLUSTER_NAME},Value=shared
-done
-
-# 3. HTTPS 설정 확인 (ingress.yaml)
-# certificate-arn이 올바른지 확인
-kubectl get ingress web-ingress -n web -o yaml | grep certificate-arn
-
-# 4. Ingress 재생성
-kubectl delete ingress web-ingress -n web
-sleep 30
-kubectl apply -f k8s-manifests/ingress/ingress.yaml
-
-# 5. ALB 생성 확인
-kubectl get ingress web-ingress -n web -w
-```
-
-### 8.4 Route53 DNS 전파 안됨
-
-#### 증상
-```bash
-dig yourdomain.com
-# ANSWER: 0
-```
-
-#### 원인
-- 도메인 등록 업체 네임서버 미변경
-- Hosted Zone ID 불일치
-
-#### 해결
-```bash
-# 1. Route53 네임서버 확인
-aws route53 get-hosted-zone \
-  --id $(cd ~/3tier-terraform/codes/aws/route53 && terraform output -raw route53_zone_id) \
-  --query 'DelegationSet.NameServers'
-
-# 2. 도메인 등록 업체에서 네임서버 확인
-whois yourdomain.com | grep -i "name server"
-
-# 3. 일치하지 않으면 도메인 등록 업체 사이트에서 네임서버 변경
-
-# 4. DNS 전파 대기
-# 5. 임시로 /etc/hosts 사용
-dig $(kubectl get ingress web-ingress -n web -o jsonpath='{.status.loadBalancer.ingress[0].hostname}') +short
-# ALB IP 확인 후
-echo "ALB_IP yourdomain.com" | sudo tee -a /etc/hosts
-```
-
-### 8.5 Azure 백업 복구 실패
-
-#### 증상
-```
-ERROR: Backup file not found
-```
-
-#### 원인
-- Storage Account Key 불일치
-- Container 이름 오류
-
-#### 해결
-```bash
-# 1. Storage Account 확인
-az storage account show \
-  --name drbackupprod2024 \
-  --query 'name'
-
-# 2. Container 확인
-az storage container show \
-  --account-name drbackupprod2024 \
-  --name mysql-backups
-
-# 3. 백업 파일 확인
-az storage blob list \
-  --account-name drbackupprod2024 \
-  --container-name mysql-backups \
-  --output table
-
-# 4. 수동 복구
-LATEST_BACKUP=$(az storage blob list \
-  --account-name drbackupprod2024 \
-  --container-name mysql-backups \
-  --query "sort_by([].name, &properties.lastModified)[-1]" \
-  --output tsv)
-
-az storage blob download \
-  --account-name drbackupprod2024 \
-  --container-name mysql-backups \
-  --name "$LATEST_BACKUP" \
-  --file /tmp/backup.sql.gz
-
-gunzip /tmp/backup.sql.gz
-
-mysql -h $(cd ~/3tier-terraform/codes/azure/2-failover && terraform output -raw mysql_fqdn) \
-  -u mysqladmin -p < /tmp/backup.sql
-```
-
-
-## 부록 A: 주요 명령어 모음
+### 주요 명령어 모음
 
 ### AWS
 
@@ -1375,51 +1118,6 @@ kubectl get secret SECRET_NAME -n NAMESPACE -o yaml
 
 ---
 
-## 부록 B: 체크리스트
-
-### 배포 전 체크리스트
-
-- [ ] AWS CLI 설정 완료
-- [ ] Azure CLI 로그인 완료
-- [ ] Terraform 설치 완료
-- [ ] kubectl 설치 완료
-- [ ] eksctl 설치 완료
-- [ ] Helm 설치 완료
-- [ ] 도메인 준비 (Route53 Hosted Zone)
-- [ ] ACM 인증서 발급
-- [ ] SSH 키 생성
-- [ ] terraform.tfvars 작성 (AWS)
-- [ ] terraform.tfvars 작성 (Azure 1-always)
-
-### AWS 배포 후 체크리스트
-
-- [ ] EKS 클러스터 정상 동작
-- [ ] RDS MySQL 접속 가능
-- [ ] Backup Instance 백업 정상 작동
-- [ ] ALB 생성 완료
-- [ ] PetClinic 정상 접속
-- [ ] HTTPS 적용 완료
-- [ ] Route53 Primary Health Check 정상
-- [ ] Azure Blob에 백업 파일 확인
-
-### Azure 2단계 배포 후 체크리스트
-
-- [ ] MySQL Flexible Server 생성
-- [ ] App Gateway 생성
-- [ ] 점검 페이지 접속 가능
-- [ ] MySQL 백업 복구 완료
-- [ ] Route53 Secondary Health Check 정상
-
-### Azure 3단계 배포 후 체크리스트
-
-- [ ] AKS 클러스터 생성
-- [ ] PetClinic Pod Running
-- [ ] App Gateway → AKS 연결
-- [ ] PetClinic 정상 접속
-- [ ] Route53 Failover 테스트 완료
-
----
-
-**문서 버전**: v1.0  
-**최종 수정**: 2024-12-21  
+**문서 버전**: v1.2
+**최종 수정**: 2024-12-23  
 **작성자**: I2ST-blue
