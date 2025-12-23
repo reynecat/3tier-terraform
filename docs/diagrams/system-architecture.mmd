@@ -1,0 +1,97 @@
+graph TB
+    User["👥 User<br/>Browser"]
+
+    subgraph DNS["☁️ Route53 DNS Failover"]
+        R53["Route53<br/>Hosted Zone"]
+        HC1["🟢 Health Check<br/>Primary"]
+        HC2["🔴 Health Check<br/>Secondary"]
+    end
+
+    subgraph AWS["🔵 AWS Primary Site<br/>ap-northeast-2"]
+        subgraph VPC["VPC: 10.0.0.0/16"]
+            IGW["Internet<br/>Gateway"]
+            NAT["NAT<br/>Gateway"]
+
+            subgraph WebTier["Web Tier<br/>10.0.11-12.0/24"]
+                EKS_Web["EKS Web Nodes<br/>t3.medium × 2"]
+                Nginx["Nginx Pods<br/>1.25-alpine<br/>2 replicas"]
+            end
+
+            subgraph WASTier["WAS Tier<br/>10.0.21-22.0/24"]
+                EKS_WAS["EKS WAS Nodes<br/>t3.medium × 2"]
+                Spring["Spring Boot Pods<br/>PetClinic<br/>2 replicas"]
+                Backup["Backup EC2<br/>t3.small"]
+            end
+
+            subgraph RDSTier["RDS Tier<br/>10.0.31-32.0/24"]
+                RDS["RDS MySQL 8.0<br/>Multi-AZ<br/>db.t3.medium"]
+            end
+
+            ALB["ALB<br/>Internet-facing<br/>80/443"]
+        end
+    end
+
+    subgraph Azure["🔴 Azure DR Site<br/>Korea Central"]
+        subgraph Stage1["Stage 1: Always-On<br/>💰 $50-100/month"]
+            VNet["VNet: 172.16.0.0/16"]
+            Blob["Blob Storage<br/>mysql-backups<br/>Static Website"]
+        end
+
+        subgraph Stage2["Stage 2: Emergency<br/>💰 +$200-300/month<br/>⏱️ T+0~15분"]
+            AppGW["Application<br/>Gateway<br/>Standard_v2"]
+            AzureMySQL["MySQL Flexible<br/>Server<br/>B_Standard_B2s"]
+            Maintenance["Maintenance<br/>Page"]
+        end
+
+        subgraph Stage3["Stage 3: Failover<br/>💰 +$400-500/month<br/>⏱️ T+15~75분"]
+            AKS["AKS Cluster<br/>v1.29<br/>3 Nodes"]
+            AKS_Nginx["Nginx Pods<br/>2 replicas"]
+            AKS_Spring["Spring Boot Pods<br/>2 replicas"]
+        end
+    end
+
+    User -->|HTTPS| R53
+    R53 -->|Monitor| HC1
+    R53 -->|Monitor| HC2
+    HC1 -->|Health Check| ALB
+    HC2 -->|Health Check| AppGW
+
+    R53 -.->|Primary<br/>Healthy| ALB
+    R53 -.->|Failover<br/>Unhealthy| AppGW
+
+    ALB --> IGW
+    IGW --> NAT
+    NAT --> Nginx
+    NAT --> Spring
+
+    Nginx -->|proxy_pass<br/>:8080| Spring
+    Spring -->|JDBC<br/>:3306| RDS
+
+    EKS_Web -.->|Host| Nginx
+    EKS_WAS -.->|Host| Spring
+
+    Backup -->|mysqldump<br/>5분 간격| RDS
+    Backup -->|Upload<br/>gzip| Blob
+
+    AppGW -->|Stage 1<br/>Static Site| Blob
+    AppGW -->|Stage 2<br/>Restore DB| AzureMySQL
+    AppGW -->|Stage 3<br/>Full Stack| AKS
+
+    AKS -.->|Deploy| AKS_Nginx
+    AKS -.->|Deploy| AKS_Spring
+
+    AKS_Nginx -->|proxy_pass| AKS_Spring
+    AKS_Spring -->|JDBC| AzureMySQL
+
+    Blob -.->|Restore<br/>Latest Backup| AzureMySQL
+
+    style AWS fill:#e3f2fd,stroke:#1976d2,stroke-width:3px
+    style Azure fill:#ffe0e0,stroke:#d32f2f,stroke-width:3px
+    style DNS fill:#f0f4c3,stroke:#f57f17,stroke-width:2px
+    style VPC fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style WebTier fill:#f3e5f5,stroke:#7b1fa2
+    style WASTier fill:#fce4ec,stroke:#c2185b
+    style RDSTier fill:#e0f2f1,stroke:#00796b
+    style Stage1 fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    style Stage2 fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style Stage3 fill:#ffab91,stroke:#bf360c,stroke-width:2px

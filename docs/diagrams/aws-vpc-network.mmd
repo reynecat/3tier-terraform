@@ -1,0 +1,73 @@
+graph TB
+    subgraph Internet["🌐 Internet"]
+        Users["Users"]
+    end
+
+    subgraph AZ1["Availability Zone: ap-northeast-2a"]
+        subgraph Public1["Public Subnet<br/>10.0.1.0/24"]
+            IGW1["Internet Gateway"]
+            NAT1["NAT Gateway<br/>Elastic IP"]
+        end
+
+        subgraph Web1["Web Tier<br/>10.0.11.0/24"]
+            EKS_Web1["EKS Web Node"]
+            SG_Web1["SG: 8080 from ALB"]
+        end
+
+        subgraph WAS1["WAS Tier<br/>10.0.21.0/24"]
+            EKS_WAS1["EKS WAS Node"]
+            Backup1["Backup EC2"]
+            SG_WAS1["SG: 8080 from Web"]
+        end
+
+        subgraph RDS1["RDS Tier<br/>10.0.31.0/24"]
+            RDS_Primary["RDS Primary"]
+            SG_RDS1["SG: 3306 from EKS"]
+        end
+    end
+
+    subgraph AZ2["Availability Zone: ap-northeast-2c"]
+        subgraph Public2["Public Subnet<br/>10.0.2.0/24"]
+            NAT2["NAT Gateway<br/>Optional"]
+        end
+
+        subgraph Web2["Web Tier<br/>10.0.12.0/24"]
+            EKS_Web2["EKS Web Node"]
+        end
+
+        subgraph WAS2["WAS Tier<br/>10.0.22.0/24"]
+            EKS_WAS2["EKS WAS Node"]
+        end
+
+        subgraph RDS2["RDS Tier<br/>10.0.32.0/24"]
+            RDS_Standby["RDS Standby<br/>Multi-AZ"]
+        end
+    end
+
+    ALB["Application<br/>Load Balancer"]
+
+    Users -->|HTTPS| ALB
+    ALB --> IGW1
+    IGW1 --> NAT1
+    NAT1 --> EKS_Web1
+    NAT1 --> EKS_WAS1
+    NAT1 --> EKS_Web2
+    NAT1 --> EKS_WAS2
+
+    EKS_Web1 --> SG_Web1
+    EKS_WAS1 --> SG_WAS1
+    RDS_Primary --> SG_RDS1
+
+    EKS_WAS1 -->|Private| RDS_Primary
+    RDS_Primary <-.->|Sync Replication| RDS_Standby
+
+    style AZ1 fill:#e3f2fd,stroke:#1976d2
+    style AZ2 fill:#e3f2fd,stroke:#1976d2
+    style Public1 fill:#fff3e0,stroke:#f57c00
+    style Public2 fill:#fff3e0,stroke:#f57c00
+    style Web1 fill:#f3e5f5,stroke:#7b1fa2
+    style Web2 fill:#f3e5f5,stroke:#7b1fa2
+    style WAS1 fill:#fce4ec,stroke:#c2185b
+    style WAS2 fill:#fce4ec,stroke:#c2185b
+    style RDS1 fill:#e0f2f1,stroke:#00796b
+    style RDS2 fill:#e0f2f1,stroke:#00796b

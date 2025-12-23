@@ -10,6 +10,8 @@
   - [2.1 Azure 백업 복구 실패](#21-azure-백업-복구-실패)
 - [3. 백업 관련 문제](#3-백업-관련-문제)
   - [3.1 MySQL 백업 연결 문제](#31-mysql-백업-연결-문제)
+- [4. Terraform 배포 관련 문제]
+
 
 ---
 
@@ -538,6 +540,1056 @@ aws ec2 describe-security-groups \
 ```
 
 ---
+
+
+## 4. Terraform 배포 관련 문제
+
+### 4.1 AWS Secrets Manager 리소스 충돌
+
+#### 증상
+```
+Error: creating Secrets Manager Secret (backup-credentials-blue): 
+operation error Secrets Manager: CreateSecret, api error 
+InvalidRequestException: You can't create this secret because a secret 
+with this name is already scheduled for deletion.
+```
+
+#### 원인
+- 이전에 삭제된 Secret이 복구 대기 기간(7-30일) 중
+- 같은 이름의 Secret을 즉시 재생성 불가능
+
+#### 해결방법
+
+**방법 1: 강제 삭제 후 재생성**
+```bash
+# 강제 삭제 (복구 불가능)
+aws secretsmanager delete-secret \
+  --secret-id backup-credentials-blue \
+  --force-delete-without-recovery \
+  --region ap-northeast-2
+
+# Terraform 재실행
+terraform apply
+```
+
+**방법 2: 리소스 이름 변경**
+```bash
+# backup-instance.tf 수정
+# 기존: name = "backup-credentials-${var.environment}"
+# 변경: name = "backup-credentials-${var.environment}-v2"
+
+# 또는 terraform.tfvars에서 environment 변경
+# environment = "blue-v2"
+```
+
+**방법 3: 기존 Secret 복구 후 Import**
+```bash
+# Secret 복구
+aws secretsmanager restore-secret \
+  --secret-id backup-credentials-blue \
+  --region ap-northeast-2
+
+# Terraform state로 import
+terraform import aws_secretsmanager_secret.backup_credentials backup-credentials-blue
+```
+
+---
+
+### 4.2 IAM Role 이미 존재 오류
+
+#### 증상
+```
+Error: creating IAM Role (AmazonEKSClusterRole-blue): 
+EntityAlreadyExists: Role with name AmazonEKSClusterRole-blue already exists.
+```
+
+#### 원인
+- 이전 배포에서 생성된 IAM 역할이 남아있음
+- Terraform state와 실제 AWS 리소스 불일치
+
+#### 해결방법
+
+**방법 1: 기존 역할 삭제**
+```bash
+# 연결된 정책 확인
+aws iam list-attached-role-policies --role-name AmazonEKSClusterRole-blue
+
+# 정책 분리
+aws iam detach-role-policy \
+  --role-name AmazonEKSClusterRole-blue \
+  --policy-arn arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+
+# 역할 삭제
+aws iam delete-role --role-name AmazonEKSClusterRole-blue
+```
+
+**방법 2: Import 후 재사용**
+```bash
+# 기존 역할을 Terraform state로 가져오기
+terraform import aws_iam_role.eks_cluster AmazonEKSClusterRole-blue
+terraform import aws_iam_role.eks_node AmazonEKSNodeRole-blue
+```
+
+**방법 3: 역할 이름 변경**
+```bash
+# modules/eks/main.tf 수정
+resource "aws_iam_role" "eks_cluster" {
+  name = "AmazonEKSClusterRole-${var.environment}-${random_id.suffix.hex}"
+  # ...
+}
+```
+
+---
+
+### 4.3 NAT Gateway EIP 연결 충돌
+
+#### 증상
+```
+Error: creating EC2 NAT Gateway: operation error EC2: CreateNatGateway, 
+InvalidElasticIpID.InUse: The Elastic IP address 'eipalloc-xxx' is 
+already associated.
+```
+
+#### 원인
+- EIP가 이미 다른 NAT Gateway에 연결되어 있음
+- 이전 배포의 리소스가 완전히 삭제되지 않음
+
+#### 해결방법
+
+**방법 1: EIP 연결 해제 후 삭제**
+```bash
+# EIP 연결 상태 확인
+aws ec2 describe-addresses --allocation-ids eipalloc-xxx
+
+# NAT Gateway 삭제
+aws ec2 delete-nat-gateway --nat-gateway-id nat-xxx
+
+# 5분 대기 (NAT Gateway 삭제 완료)
+sleep 300
+
+# EIP 해제
+aws ec2 disassociate-address --association-id eipassoc-xxx
+
+# EIP 삭제
+aws ec2 release-address --allocation-id eipalloc-xxx
+```
+
+**방법 2: Terraform 강제 재생성**
+```bash
+# NAT Gateway 리소스 삭제
+terraform state rm module.vpc.aws_nat_gateway.main
+
+# EIP 리소스 삭제
+terraform state rm module.vpc.aws_eip.nat
+
+# 재생성
+terraform apply
+```
+
+---
+
+### 4.4 Subnet 삭제 실패 (의존성 문제)
+
+#### 증상
+```
+Error: deleting EC2 Subnet (subnet-xxx): DependencyViolation: 
+The subnet 'subnet-xxx' has dependencies and cannot be deleted.
+```
+
+#### 원인
+- ENI (Elastic Network Interface)가 서브넷에 남아있음
+- Lambda, NAT Gateway, Load Balancer 등이 ENI 사용 중
+
+#### 해결방법
+
+**자동 정리 스크립트**
+```bash
+#!/bin/bash
+# cleanup-subnet-dependencies.sh
+
+VPC_ID="vpc-03ef812b69212db97"
+REGION="ap-northeast-2"
+
+echo "=== ENI 정리 시작 ==="
+
+# 1. Lambda ENI 찾기 및 삭제
+echo "[1/5] Lambda ENI 삭제..."
+for ENI_ID in $(aws ec2 describe-network-interfaces \
+  --region $REGION \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+            "Name=description,Values=AWS Lambda VPC ENI*" \
+  --query 'NetworkInterfaces[*].NetworkInterfaceId' \
+  --output text); do
+  echo "  삭제: $ENI_ID"
+  aws ec2 delete-network-interface --region $REGION --network-interface-id $ENI_ID || true
+done
+
+# 2. NAT Gateway 삭제
+echo "[2/5] NAT Gateway 삭제..."
+for NAT_GW in $(aws ec2 describe-nat-gateways \
+  --region $REGION \
+  --filter "Name=vpc-id,Values=$VPC_ID" "Name=state,Values=available" \
+  --query 'NatGateways[*].NatGatewayId' \
+  --output text); do
+  echo "  삭제: $NAT_GW"
+  aws ec2 delete-nat-gateway --region $REGION --nat-gateway-id $NAT_GW
+done
+
+# 3. VPN Connection 삭제
+echo "[3/5] VPN Connection 삭제..."
+for VPN_CONN in $(aws ec2 describe-vpn-connections \
+  --region $REGION \
+  --filters "Name=state,Values=available" \
+  --query 'VpnConnections[*].VpnConnectionId' \
+  --output text); do
+  echo "  삭제: $VPN_CONN"
+  aws ec2 delete-vpn-connection --region $REGION --vpn-connection-id $VPN_CONN
+done
+
+# 4. 10분 대기 (리소스 삭제 완료)
+echo "[4/5] 10분 대기 중..."
+sleep 600
+
+# 5. 남은 ENI 강제 삭제
+echo "[5/5] 남은 ENI 강제 삭제..."
+for ENI_ID in $(aws ec2 describe-network-interfaces \
+  --region $REGION \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+  --query 'NetworkInterfaces[*].NetworkInterfaceId' \
+  --output text); do
+  echo "  강제 삭제: $ENI_ID"
+  aws ec2 delete-network-interface --region $REGION --network-interface-id $ENI_ID 2>/dev/null || true
+done
+
+echo "=== 정리 완료 ==="
+```
+
+---
+
+### 4.5 Internet Gateway Detach 실패
+
+#### 증상
+```
+Error: detaching EC2 Internet Gateway (igw-xxx): DependencyViolation: 
+Network vpc-xxx has some mapped public address(es). 
+Please unmap those public address(es) before detaching the gateway.
+```
+
+#### 원인
+- VPC에 Elastic IP가 남아있음
+- NAT Gateway, Load Balancer 등이 EIP 사용 중
+
+#### 해결방법
+
+```bash
+#!/bin/bash
+# cleanup-eip.sh
+
+REGION="ap-northeast-2"
+
+echo "=== Elastic IP 정리 ==="
+
+# 1. 모든 EIP 확인
+echo "[1/3] EIP 목록 확인..."
+aws ec2 describe-addresses \
+  --region $REGION \
+  --query 'Addresses[*].[PublicIp,AllocationId,AssociationId]' \
+  --output table
+
+# 2. 연결 해제
+echo "[2/3] EIP 연결 해제..."
+for ASSOC_ID in $(aws ec2 describe-addresses \
+  --region $REGION \
+  --query 'Addresses[?AssociationId!=`null`].AssociationId' \
+  --output text); do
+  echo "  해제: $ASSOC_ID"
+  aws ec2 disassociate-address --region $REGION --association-id $ASSOC_ID || true
+done
+
+# 3. EIP 릴리스
+echo "[3/3] EIP 릴리스..."
+for ALLOC_ID in $(aws ec2 describe-addresses \
+  --region $REGION \
+  --query 'Addresses[*].AllocationId' \
+  --output text); do
+  echo "  릴리스: $ALLOC_ID"
+  aws ec2 release-address --region $REGION --allocation-id $ALLOC_ID || true
+done
+
+echo "=== EIP 정리 완료 ==="
+```
+
+---
+
+### 4.6 IAM User 삭제 실패
+
+#### 증상
+```
+Error: deleting IAM User (azure-vm-s3-access-prod): DeleteConflict: 
+Cannot delete entity, must delete policies first.
+```
+
+#### 원인
+- IAM User에 정책이 연결되어 있음
+- Access Key가 남아있음
+
+#### 해결방법
+
+```bash
+#!/bin/bash
+# cleanup-iam-user.sh
+
+USER_NAME="azure-vm-s3-access-prod"
+
+echo "=== IAM User 정리: $USER_NAME ==="
+
+# 1. Inline Policy 삭제
+echo "[1/4] Inline Policy 삭제..."
+for POLICY in $(aws iam list-user-policies --user-name $USER_NAME --query 'PolicyNames[]' --output text); do
+  echo "  삭제: $POLICY"
+  aws iam delete-user-policy --user-name $USER_NAME --policy-name $POLICY
+done
+
+# 2. Managed Policy 분리
+echo "[2/4] Managed Policy 분리..."
+for POLICY_ARN in $(aws iam list-attached-user-policies --user-name $USER_NAME --query 'AttachedPolicies[*].PolicyArn' --output text); do
+  echo "  분리: $POLICY_ARN"
+  aws iam detach-user-policy --user-name $USER_NAME --policy-arn $POLICY_ARN
+done
+
+# 3. Access Key 삭제
+echo "[3/4] Access Key 삭제..."
+for KEY_ID in $(aws iam list-access-keys --user-name $USER_NAME --query 'AccessKeyMetadata[*].AccessKeyId' --output text); do
+  echo "  삭제: $KEY_ID"
+  aws iam delete-access-key --user-name $USER_NAME --access-key-id $KEY_ID
+done
+
+# 4. User 삭제
+echo "[4/4] User 삭제..."
+aws iam delete-user --user-name $USER_NAME
+
+echo "=== IAM User 삭제 완료 ==="
+```
+
+---
+
+## 5. Kubernetes 배포 관련 문제
+
+### 5.1 ServiceAccount 생성 시 DNS 해석 실패
+
+#### 증상
+```
+Error: unable to recognize "sa.yaml": Get 
+"https://FEACDB00987EE9F39E4D7139AF69127D.gr7.ap-northeast-2.eks.amazonaws.com/...": 
+dial tcp: lookup FEACDB00987EE9F39E4D7139AF69127D.gr7.ap-northeast-2.eks.amazonaws.com: 
+no such host
+```
+
+#### 원인
+- EKS 클러스터 엔드포인트가 DNS에 전파되지 않음
+- 클러스터 생성 직후 발생 (1-2분 소요)
+
+#### 해결방법
+
+**방법 1: kubeconfig 재생성**
+```bash
+# kubeconfig 업데이트
+aws eks update-kubeconfig \
+  --region ap-northeast-2 \
+  --name $(cd ~/3tier-terraform/PlanB/aws && terraform output -raw eks_cluster_name)
+
+# 클러스터 상태 확인
+kubectl cluster-info
+
+# 재시도
+kubectl apply -f sa.yaml
+```
+
+**방법 2: DNS 캐시 초기화**
+```bash
+# systemd-resolved 재시작 (Ubuntu/Debian)
+sudo systemctl restart systemd-resolved
+
+# DNS 캐시 삭제
+sudo resolvectl flush-caches
+
+# 직접 DNS 조회 테스트
+nslookup FEACDB00987EE9F39E4D7139AF69127D.gr7.ap-northeast-2.eks.amazonaws.com
+```
+
+**방법 3: 수동 대기 후 재시도**
+```bash
+# 2분 대기
+sleep 120
+
+# ServiceAccount 생성
+kubectl apply -f sa.yaml
+```
+
+**방법 4: validation 비활성화 (임시)**
+```bash
+# OpenAPI validation 비활성화
+kubectl apply -f sa.yaml --validate=false
+
+# Helm으로 설치하는 경우
+helm install aws-load-balancer-controller ... --wait --timeout 2m
+```
+
+---
+
+### 5.2 WAS Pod CrashLoopBackOff (DB 연결 실패)
+
+#### 증상
+```
+was-spring-xxx   0/1     CrashLoopBackOff   5   10m
+```
+
+#### 원인
+- DB 비밀번호 불일치
+- RDS 보안 그룹 설정 오류
+- RDS 엔드포인트 잘못 설정
+
+#### 해결방법
+
+**1단계: Pod 로그 확인**
+```bash
+# 로그 확인
+kubectl logs -n was -l app=was-spring --tail=100
+
+# 에러 패턴 확인
+# "Access denied for user 'admin'@'xxx'" -> 비밀번호 문제
+# "Communications link failure" -> 네트워크 문제
+# "Unknown database 'petclinic'" -> 데이터베이스 없음
+```
+
+**2단계: Secret 확인 및 재생성**
+```bash
+# 현재 Secret 확인
+kubectl get secret db-credentials -n was -o jsonpath='{.data.password}' | base64 -d
+echo
+
+# Secret 삭제
+kubectl delete secret db-credentials -n was
+
+# RDS 정보 확인
+cd ~/3tier-terraform/PlanB/aws
+export RDS_HOST=$(terraform output -raw rds_address)
+echo "RDS Host: $RDS_HOST"
+
+# Secret 재생성
+kubectl create secret generic db-credentials \
+  --from-literal=url="jdbc:mysql://${RDS_HOST}:3306/petclinic" \
+  --from-literal=username="admin" \
+  --from-literal=password="byemyblue" \
+  --namespace=was
+
+# Deployment 재시작
+kubectl rollout restart deployment was-spring -n was
+
+# 로그 확인
+kubectl logs -f deployment/was-spring -n was
+```
+
+**3단계: RDS 보안 그룹 확인**
+```bash
+# RDS 보안 그룹 ID 확인
+export RDS_SG=$(aws rds describe-db-instances \
+  --db-instance-identifier $(cd ~/3tier-terraform/PlanB/aws && terraform output -raw rds_identifier) \
+  --query 'DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId' \
+  --output text)
+
+# EKS 노드 보안 그룹 ID 확인
+export NODE_SG=$(aws ec2 describe-security-groups \
+  --filters "Name=tag:Name,Values=*node*" \
+  --query 'SecurityGroups[0].GroupId' \
+  --output text)
+
+echo "RDS SG: $RDS_SG"
+echo "Node SG: $NODE_SG"
+
+# MySQL 포트(3306) 인바운드 규칙 추가
+aws ec2 authorize-security-group-ingress \
+  --group-id $RDS_SG \
+  --protocol tcp \
+  --port 3306 \
+  --source-group $NODE_SG
+
+# 규칙 확인
+aws ec2 describe-security-groups --group-ids $RDS_SG
+```
+
+---
+
+### 5.3 ALB 생성 안됨 (Subnet 태그 누락)
+
+#### 증상
+```bash
+kubectl get ingress web-ingress -n web
+# NAME          CLASS   HOSTS   ADDRESS   PORTS   AGE
+# web-ingress   alb     *                 80      10m
+```
+(ADDRESS가 비어있음)
+
+#### 원인
+- Public Subnet에 필수 태그가 없음
+- `kubernetes.io/role/elb` 태그 누락
+
+#### 해결방법
+
+**1단계: Ingress 로그 확인**
+```bash
+# Ingress 상세 정보
+kubectl describe ingress web-ingress -n web
+
+# AWS Load Balancer Controller 로그
+kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=100
+
+# 에러 패턴:
+# "unable to resolve at least 2 subnets" -> Subnet 태그 문제
+# "no matching subnets found" -> Public Subnet 없음
+```
+
+**2단계: Subnet 태그 추가**
+```bash
+cd ~/3tier-terraform/PlanB/aws
+export VPC_ID=$(terraform output -raw vpc_id)
+export CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
+export PUBLIC_SUBNET_IDS=$(terraform output -json public_subnet_ids | jq -r '.[]')
+
+# 각 Public Subnet에 태그 추가
+for SUBNET_ID in $PUBLIC_SUBNET_IDS; do
+  echo "Tagging subnet: $SUBNET_ID"
+  aws ec2 create-tags \
+    --resources $SUBNET_ID \
+    --tags \
+      Key=kubernetes.io/role/elb,Value=1 \
+      Key=kubernetes.io/cluster/${CLUSTER_NAME},Value=shared
+done
+
+# 태그 확인
+aws ec2 describe-subnets --subnet-ids $PUBLIC_SUBNET_IDS --query 'Subnets[*].[SubnetId,Tags]'
+```
+
+**3단계: Ingress 재생성**
+```bash
+# Ingress 삭제
+kubectl delete ingress web-ingress -n web
+
+# 30초 대기 (ALB 완전 삭제)
+sleep 30
+
+# Ingress 재생성
+kubectl apply -f k8s-manifests/ingress/ingress.yaml
+
+# ALB 생성 모니터링
+kubectl get ingress web-ingress -n web -w
+```
+
+---
+
+### 5.4 HTTPS 연결 실패 (Security Group 443 포트 누락)
+
+#### 증상
+```bash
+curl https://yourdomain.com
+# curl: (7) Failed to connect to yourdomain.com port 443: Connection timed out
+```
+
+#### 원인
+- ALB Security Group에 443 포트 인바운드 규칙 없음
+
+#### 해결방법
+
+```bash
+# ALB Security Group ID 확인
+export ALB_SG=$(aws ec2 describe-security-groups \
+  --filters "Name=tag:elbv2.k8s.aws/cluster,Values=$(cd ~/3tier-terraform/PlanB/aws && terraform output -raw eks_cluster_name)" \
+  --query 'SecurityGroups[0].GroupId' \
+  --output text)
+
+echo "ALB SG: $ALB_SG"
+
+# HTTPS (443) 인바운드 규칙 추가
+aws ec2 authorize-security-group-ingress \
+  --group-id $ALB_SG \
+  --protocol tcp \
+  --port 443 \
+  --cidr 0.0.0.0/0
+
+# 규칙 확인
+aws ec2 describe-security-groups \
+  --group-ids $ALB_SG \
+  --query 'SecurityGroups[0].IpPermissions'
+
+# HTTPS 접속 테스트
+curl -I https://yourdomain.com
+```
+
+---
+
+## 6. Route53 및 DNS 관련 문제
+
+### 6.1 ACM 인증서 검증 지연
+
+#### 증상
+```
+aws_acm_certificate.main: Still creating... [18m20s elapsed]
+```
+
+#### 원인
+- DNS 네임서버가 Route53으로 변경되지 않음
+- 도메인 등록 업체에서 네임서버 미변경
+
+#### 해결방법
+
+**1단계: Route53 네임서버 확인**
+```bash
+# Hosted Zone 네임서버 확인
+aws route53 get-hosted-zone \
+  --id $(cd ~/3tier-terraform/PlanB/aws && terraform output -raw route53_zone_id) \
+  --query 'DelegationSet.NameServers'
+
+# 출력 예시:
+# [
+#   "ns-123.awsdns-12.com",
+#   "ns-456.awsdns-45.net",
+#   "ns-789.awsdns-78.org",
+#   "ns-012.awsdns-01.co.uk"
+# ]
+```
+
+**2단계: 도메인 등록 업체 네임서버 확인**
+```bash
+# 현재 네임서버 확인
+whois yourdomain.com | grep -i "name server"
+
+# 또는
+dig NS yourdomain.com +short
+```
+
+**3단계: 네임서버 변경 (도메인 등록 업체 사이트)**
+- Gabia, Cafe24, AWS Route53 등 로그인
+- 도메인 관리 > 네임서버 설정
+- Route53 네임서버 4개 모두 입력
+
+**4단계: DNS 전파 확인**
+```bash
+# 여러 DNS 서버에서 확인
+dig @8.8.8.8 yourdomain.com NS
+dig @1.1.1.1 yourdomain.com NS
+
+# 전파 상태 체크 (웹)
+# https://dnschecker.org
+
+# ACM 검증 레코드 확인
+dig _xxx.yourdomain.com CNAME +short
+```
+
+---
+
+### 6.2 Route53 Failover 동작 안함
+
+#### 증상
+```bash
+# AWS ALB가 정상인데도 Azure로 트래픽 전송
+dig yourdomain.com +short
+# 4.218.19.57 (Azure IP)
+```
+
+#### 원인
+- Primary Health Check 설정 오류
+- 잘못된 엔드포인트 설정 (도메인 대신 ALB DNS 사용)
+
+#### 해결방법
+
+**1단계: Health Check 상태 확인**
+```bash
+# Primary Health Check 상태
+aws route53 get-health-check-status \
+  --health-check-id $(cd ~/3tier-terraform/PlanB/aws && terraform output -json route53_health_check_ids | jq -r '.primary')
+
+# 출력 예시:
+# "Status": "Failure",  <- 문제!
+# "StatusReport": {
+#   "CheckedTime": "...",
+#   "Status": "Failure"
+# }
+```
+
+**2단계: Health Check 설정 확인**
+```bash
+# Health Check 상세 정보
+aws route53 get-health-check \
+  --health-check-id $(cd ~/3tier-terraform/PlanB/aws && terraform output -json route53_health_check_ids | jq -r '.primary')
+
+# ResourcePath와 FullyQualifiedDomainName 확인
+# 잘못된 예: FullyQualifiedDomainName = "k8s-web-xxx.elb.amazonaws.com"
+# 올바른 예: FullyQualifiedDomainName = "yourdomain.com"
+```
+
+**3단계: route53.tf 수정**
+```hcl
+# route53.tf
+
+# Primary Health Check (잘못된 설정)
+resource "aws_route53_health_check" "primary" {
+  fqdn              = local.alb_dns_name  # <- 문제!
+  port              = 443
+  type              = "HTTPS_STR_MATCH"
+  resource_path     = "/"
+  request_interval  = 30
+  failure_threshold = 3
+  measure_latency   = false
+  search_string     = "PetClinic"
+}
+
+# Primary Health Check (올바른 설정)
+resource "aws_route53_health_check" "primary" {
+  fqdn              = var.domain_name  # <- 수정!
+  port              = 80               # HTTP로 변경
+  type              = "HTTP"           # HTTPS_STR_MATCH 제거
+  resource_path     = "/"
+  request_interval  = 30
+  failure_threshold = 3
+  measure_latency   = false
+}
+```
+
+**4단계: Terraform 재적용**
+```bash
+cd ~/3tier-terraform/PlanB/aws
+terraform apply
+
+# Health Check 상태 재확인
+aws route53 get-health-check-status \
+  --health-check-id $(terraform output -json route53_health_check_ids | jq -r '.primary')
+
+# "Status": "Success" 확인
+```
+
+---
+
+### 6.3 브라우저 DNS 캐싱 문제
+
+#### 증상
+- 다른 브라우저에서는 정상 페이지 표시
+- 기존 브라우저에서 유지보수 페이지 계속 표시
+
+#### 원인
+- 브라우저 DNS 캐시
+- Route53 TTL(60초) 만료 전 DNS 조회
+
+#### 해결방법
+
+**Chrome**
+```
+chrome://net-internals/#dns
+-> "Clear host cache" 클릭
+```
+
+**Firefox**
+```
+about:networking#dns
+-> "Clear DNS Cache" 클릭
+```
+
+**Safari**
+```
+# 개발자 메뉴 활성화 후
+개발자 > 캐시 비우기
+```
+
+**Linux 시스템 DNS 캐시**
+```bash
+# systemd-resolved
+sudo systemd-resolve --flush-caches
+sudo systemctl restart systemd-resolved
+
+# nscd
+sudo /etc/init.d/nscd restart
+
+# dnsmasq
+sudo /etc/init.d/dnsmasq restart
+```
+
+**확인**
+```bash
+# DNS 조회 (캐시 무시)
+dig yourdomain.com +short @8.8.8.8
+
+# 웹 접속 (캐시 무시)
+curl -H "Cache-Control: no-cache" https://yourdomain.com
+```
+
+---
+
+## 7. 백업 관련 문제
+
+### 7.1 MySQL 백업 연결 실패 (RDS)
+
+#### 증상
+```bash
+mysql -h $RDS_HOST -u $DB_USERNAME -p$DB_PASSWORD
+# ERROR 2003 (HY000): Can't connect to MySQL server on 'xxx' (110)
+```
+
+#### 원인
+- RDS 보안 그룹에 백업 인스턴스 IP 미허용
+- RDS Public Access 비활성화
+
+#### 해결방법
+
+**1단계: 백업 인스턴스 보안 그룹 ID 확인**
+```bash
+# 백업 인스턴스 정보
+aws ec2 describe-instances \
+  --instance-ids $(cd ~/3tier-terraform/PlanB/aws && terraform output -raw backup_instance_id) \
+  --query 'Reservations[0].Instances[0].SecurityGroups[0].GroupId' \
+  --output text
+
+export BACKUP_SG=sg-xxx
+```
+
+**2단계: RDS 보안 그룹에 인바운드 규칙 추가**
+```bash
+# RDS 보안 그룹 ID
+export RDS_SG=$(aws rds describe-db-instances \
+  --db-instance-identifier $(cd ~/3tier-terraform/PlanB/aws && terraform output -raw rds_identifier) \
+  --query 'DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId' \
+  --output text)
+
+echo "RDS SG: $RDS_SG"
+echo "Backup SG: $BACKUP_SG"
+
+# MySQL(3306) 인바운드 규칙 추가
+aws ec2 authorize-security-group-ingress \
+  --group-id $RDS_SG \
+  --protocol tcp \
+  --port 3306 \
+  --source-group $BACKUP_SG
+
+# 확인
+aws ec2 describe-security-groups --group-ids $RDS_SG
+```
+
+**3단계: 연결 테스트**
+```bash
+# SSM으로 백업 인스턴스 접속
+aws ssm start-session --target $(cd ~/3tier-terraform/PlanB/aws && terraform output -raw backup_instance_id)
+
+# MySQL 연결 테스트
+mysql -h $RDS_HOST -u admin -pbyemyblue -e "SELECT 1;"
+```
+
+---
+
+### 7.2 mysqldump 권한 오류 (RDS)
+
+#### 증상
+```bash
+mysqldump: Got error: 1045: Access denied for user 'admin'@'%' (using password: YES) 
+when executing 'FLUSH TABLES WITH READ LOCK'
+```
+
+#### 원인
+- RDS admin 계정은 SUPER 권한이 없음
+- FLUSH TABLES 명령 실행 불가
+
+#### 해결방법
+
+**mysqldump 옵션 수정**
+```bash
+# --skip-lock-tables와 --set-gtid-purged=OFF 추가
+mysqldump -h $RDS_HOST \
+  -u admin -pbyemyblue \
+  --databases petclinic \
+  --skip-lock-tables \
+  --set-gtid-purged=OFF \
+  --single-transaction \
+  --quick \
+  --routines \
+  --triggers \
+  --events \
+  | gzip > /tmp/backup.sql.gz
+```
+
+**백업 스크립트 업데이트**
+```bash
+# /usr/local/bin/mysql-backup-to-azure.sh
+
+# 수정 전
+mysqldump -h "$RDS_HOST" -u "$DB_USERNAME" -p"$DB_PASSWORD" \
+  --databases petclinic | gzip > "$BACKUP_FILE"
+
+# 수정 후
+mysqldump -h "$RDS_HOST" -u "$DB_USERNAME" -p"$DB_PASSWORD" \
+  --databases petclinic \
+  --skip-lock-tables \
+  --set-gtid-purged=OFF \
+  --single-transaction \
+  | gzip > "$BACKUP_FILE"
+```
+
+---
+
+### 7.3 Azure Blob Storage 업로드 실패
+
+#### 증상
+```bash
+az storage blob upload ... 
+# Error: The specified container does not exist.
+```
+
+#### 원인
+- Container 이름 오류
+- Storage Account Key 불일치
+
+#### 해결방법
+
+**1단계: Storage Account 확인**
+```bash
+# Azure 로그인
+az login
+
+# Storage Account 존재 확인
+az storage account show \
+  --name drbackupprod2024 \
+  --query 'name' \
+  --output tsv
+```
+
+**2단계: Container 확인 및 생성**
+```bash
+# Container 목록
+az storage container list \
+  --account-name drbackupprod2024 \
+  --output table
+
+# Container 생성 (없는 경우)
+az storage container create \
+  --account-name drbackupprod2024 \
+  --name mysql-backups \
+  --public-access off
+```
+
+**3단계: Storage Key 재확인**
+```bash
+# Key 조회
+az storage account keys list \
+  --account-name drbackupprod2024 \
+  --query "[0].value" \
+  --output tsv
+
+# 백업 인스턴스에서 환경변수 업데이트
+export AZURE_STORAGE_KEY="새로운키"
+```
+
+---
+
+## 8. Azure 관련 문제
+
+### 8.1 Azure CLI 인증 실패 (백업 인스턴스)
+
+#### 증상
+```bash
+az storage blob upload ...
+# Error: Please run 'az login' to setup account.
+```
+
+#### 원인
+- Service Principal 인증 정보 누락
+- 환경변수 미설정
+
+#### 해결방법
+
+**1단계: Service Principal 생성 (로컬)**
+```bash
+# Azure 로그인
+az login
+
+# Service Principal 생성
+az ad sp create-for-rbac \
+  --name "backup-sp-$(date +%s)" \
+  --role "Storage Blob Data Contributor" \
+  --scopes /subscriptions/$(az account show --query id -o tsv)
+
+# 출력 저장:
+# {
+#   "appId": "xxx",
+#   "password": "yyy",
+#   "tenant": "zzz"
+# }
+```
+
+**2단계: 백업 인스턴스에 인증 정보 설정**
+```bash
+# SSM으로 접속
+aws ssm start-session --target i-xxx
+
+# 환경변수 설정
+export AZURE_CLIENT_ID="appId"
+export AZURE_CLIENT_SECRET="password"
+export AZURE_TENANT_ID="tenant"
+
+# 로그인
+az login --service-principal \
+  -u $AZURE_CLIENT_ID \
+  -p $AZURE_CLIENT_SECRET \
+  --tenant $AZURE_TENANT_ID
+
+# 업로드 테스트
+az storage blob upload \
+  --account-name drbackupprod2024 \
+  --container-name mysql-backups \
+  --name test.txt \
+  --file /tmp/test.txt
+```
+
+---
+
+### 8.2 AKS kubectl 접속 실패
+
+#### 증상
+```bash
+kubectl get nodes
+# Unable to connect to the server: dial tcp: lookup xxx: no such host
+```
+
+#### 원인
+- kubeconfig 미설정
+- AKS 클러스터 미배포
+
+#### 해결방법
+
+**1단계: AKS 클러스터 확인**
+```bash
+# AKS 클러스터 존재 확인
+az aks show \
+  --resource-group rg-dr-blue \
+  --name aks-dr-blue \
+  --query 'name' \
+  --output tsv
+```
+
+**2단계: kubeconfig 설정**
+```bash
+# AKS credentials 가져오기
+az aks get-credentials \
+  --resource-group rg-dr-blue \
+  --name aks-dr-blue \
+  --overwrite-existing
+
+# 컨텍스트 확인
+kubectl config current-context
+
+# 노드 확인
+kubectl get nodes
+```
+
+---
+
+
+
 
 **문서 버전**: v1.3
 **최종 수정**: 2024-12-23

@@ -1,0 +1,26 @@
+sequenceDiagram
+    participant User as 👥 User
+    participant R53 as Route53
+    participant ALB as AWS ALB
+    participant Nginx as Nginx Pod
+    participant Spring as Spring Boot
+    participant RDS as RDS MySQL
+    participant Backup as Backup EC2
+    participant Blob as Azure Blob
+
+    User->>R53: DNS Query (domain.com)
+    R53->>User: Primary: ALB IP
+    User->>ALB: HTTPS Request
+    ALB->>Nginx: HTTP :8080
+    Nginx->>Spring: Proxy :8080
+    Spring->>RDS: JDBC :3306
+    RDS-->>Spring: Data
+    Spring-->>Nginx: Response
+    Nginx-->>ALB: Response
+    ALB-->>User: HTTPS Response
+
+    loop Every 5 minutes
+        Backup->>RDS: mysqldump
+        RDS-->>Backup: backup.sql
+        Backup->>Blob: Upload gzip
+    end

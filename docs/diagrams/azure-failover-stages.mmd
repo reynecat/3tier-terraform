@@ -1,0 +1,53 @@
+stateDiagram-v2
+    [*] --> Stage1_Always: 평상시 (AWS 정상)
+
+    state "Stage 1: Always-On" as Stage1_Always {
+        [*] --> VNet_Ready
+        VNet_Ready --> Blob_Active
+        Blob_Active --> Backup_Receiving
+        Backup_Receiving --> Static_Website
+
+        note right of Blob_Active
+            💰 Cost: $50-100/month
+            - VNet (예약, 무료)
+            - Blob Storage (LRS)
+            - 30일 백업 보관
+        end note
+    }
+
+    Stage1_Always --> Stage2_Emergency: AWS 장애 감지<br/>(T+0분)
+
+    state "Stage 2: Emergency Response" as Stage2_Emergency {
+        [*] --> Deploy_AppGW
+        Deploy_AppGW --> Deploy_MySQL
+        Deploy_MySQL --> Restore_DB
+        Restore_DB --> Show_Maintenance
+
+        note right of Deploy_MySQL
+            💰 Cost: +$200-300/month
+            ⏱️ Time: 10-15분
+            - App Gateway 활성화
+            - MySQL 복구
+            - 유지보수 페이지
+        end note
+    }
+
+    Stage2_Emergency --> Stage3_Failover: 완전 복구 필요<br/>(T+15분)
+
+    state "Stage 3: Complete Failover" as Stage3_Failover {
+        [*] --> Deploy_AKS
+        Deploy_AKS --> Deploy_Pods
+        Deploy_Pods --> Connect_DB
+        Connect_DB --> Full_Service
+
+        note right of Deploy_AKS
+            💰 Cost: +$400-500/month
+            ⏱️ Time: 15-20분
+            - AKS 클러스터
+            - Nginx + Spring Boot
+            - 정상 서비스
+        end note
+    }
+
+    Stage3_Failover --> AWS_Recovered: AWS 복구 완료
+    AWS_Recovered --> Stage1_Always: Failback

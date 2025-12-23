@@ -1,0 +1,36 @@
+sequenceDiagram
+    participant User as 👥 User
+    participant R53 as Route53
+    participant HC as Health Check
+    participant ALB as AWS ALB
+    participant AppGW as Azure AppGW
+    participant Blob as Blob Storage
+    participant MySQL as Azure MySQL
+    participant AKS as AKS Cluster
+
+    Note over ALB: AWS Failure
+    HC->>ALB: Health Check
+    ALB-->>HC: Timeout (3 failures)
+    HC->>R53: Mark Unhealthy
+
+    Note over R53: T+90s: DNS Failover
+    User->>R53: DNS Query
+    R53->>User: Secondary: AppGW IP
+
+    Note over AppGW,Blob: Stage 1: Maintenance Page
+    User->>AppGW: HTTPS Request
+    AppGW->>Blob: Static Website
+    Blob-->>AppGW: index.html
+    AppGW-->>User: Maintenance Page
+
+    Note over MySQL: Stage 2: DB Restore (T+0~15분)
+    Blob->>MySQL: Restore Latest Backup
+
+    Note over AKS: Stage 3: Full Failover (T+15~75분)
+    AKS->>AKS: Deploy Pods
+    AppGW->>AKS: Route Traffic
+    AKS->>MySQL: Connect DB
+    User->>AppGW: HTTPS Request
+    AppGW->>AKS: Forward
+    AKS-->>AppGW: Response
+    AppGW-->>User: Full Service

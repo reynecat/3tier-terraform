@@ -1,0 +1,54 @@
+graph TB
+    subgraph Internet2["🌐 Internet"]
+        Users2["Users<br/>Failover"]
+    end
+
+    subgraph RG["Resource Group: Korea Central"]
+        subgraph VNet["VNet: 172.16.0.0/16"]
+            subgraph AppGW_Subnet["App Gateway Subnet<br/>172.16.1.0/24"]
+                AppGW2["Application Gateway<br/>Public IP<br/>Standard_v2"]
+                NSG_AppGW["NSG: 80/443"]
+            end
+
+            subgraph Web_Subnet["Web Subnet<br/>172.16.11.0/24"]
+                AKS_Web["AKS Web Nodes<br/>Stage 3"]
+                NSG_Web2["NSG: 8080"]
+            end
+
+            subgraph WAS_Subnet["WAS Subnet<br/>172.16.21.0/24"]
+                AKS_WAS["AKS App Nodes<br/>Stage 3"]
+                NSG_WAS2["NSG: 8080"]
+            end
+
+            subgraph DB_Subnet["DB Subnet<br/>172.16.31.0/24"]
+                MySQL2["MySQL Flexible<br/>Server<br/>Stage 2"]
+                NSG_DB["NSG: 3306"]
+            end
+
+            subgraph AKS_Subnet["AKS Subnet<br/>172.16.41.0/24"]
+                AKS2["AKS System<br/>& User Nodes"]
+                NSG_AKS["NSG: 443"]
+            end
+        end
+
+        Blob2["Blob Storage<br/>mysql-backups<br/>Static Website<br/>Stage 1"]
+    end
+
+    Users2 -->|Failover| AppGW2
+    AppGW2 -->|Stage 1| Blob2
+    AppGW2 -->|Stage 2| MySQL2
+    AppGW2 -->|Stage 3| AKS2
+
+    AKS2 --> AKS_Web
+    AKS2 --> AKS_WAS
+    AKS_WAS --> MySQL2
+
+    Blob2 -.->|Restore| MySQL2
+
+    style RG fill:#ffe0e0,stroke:#d32f2f,stroke-width:2px
+    style VNet fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style AppGW_Subnet fill:#fff3e0,stroke:#f57c00
+    style Web_Subnet fill:#f3e5f5,stroke:#7b1fa2
+    style WAS_Subnet fill:#fce4ec,stroke:#c2185b
+    style DB_Subnet fill:#e0f2f1,stroke:#00796b
+    style AKS_Subnet fill:#e1f5fe,stroke:#01579b

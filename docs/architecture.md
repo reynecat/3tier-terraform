@@ -15,105 +15,15 @@
 
 ## 🏗️ 전체 시스템 아키텍처
 
-```mermaid
-graph TB
-    User["👥 User<br/>Browser"]
+> 📊 **다이어그램 파일:** [diagrams/system-architecture.mmd](diagrams/system-architecture.mmd)
 
-    subgraph DNS["☁️ Route53 DNS Failover"]
-        R53["Route53<br/>Hosted Zone"]
-        HC1["🟢 Health Check<br/>Primary"]
-        HC2["🔴 Health Check<br/>Secondary"]
-    end
+전체 시스템은 AWS Primary Site와 Azure DR Site로 구성되며, Route53 DNS Failover를 통해 자동으로 장애 전환됩니다.
 
-    subgraph AWS["🔵 AWS Primary Site<br/>ap-northeast-2"]
-        subgraph VPC["VPC: 10.0.0.0/16"]
-            IGW["Internet<br/>Gateway"]
-            NAT["NAT<br/>Gateway"]
-
-            subgraph WebTier["Web Tier<br/>10.0.11-12.0/24"]
-                EKS_Web["EKS Web Nodes<br/>t3.medium × 2"]
-                Nginx["Nginx Pods<br/>1.25-alpine<br/>2 replicas"]
-            end
-
-            subgraph WASTier["WAS Tier<br/>10.0.21-22.0/24"]
-                EKS_WAS["EKS WAS Nodes<br/>t3.medium × 2"]
-                Spring["Spring Boot Pods<br/>PetClinic<br/>2 replicas"]
-                Backup["Backup EC2<br/>t3.small"]
-            end
-
-            subgraph RDSTier["RDS Tier<br/>10.0.31-32.0/24"]
-                RDS["RDS MySQL 8.0<br/>Multi-AZ<br/>db.t3.medium"]
-            end
-
-            ALB["ALB<br/>Internet-facing<br/>80/443"]
-        end
-    end
-
-    subgraph Azure["🔴 Azure DR Site<br/>Korea Central"]
-        subgraph Stage1["Stage 1: Always-On<br/>💰 $50-100/month"]
-            VNet["VNet: 172.16.0.0/16"]
-            Blob["Blob Storage<br/>mysql-backups<br/>Static Website"]
-        end
-
-        subgraph Stage2["Stage 2: Emergency<br/>💰 +$200-300/month<br/>⏱️ T+0~15분"]
-            AppGW["Application<br/>Gateway<br/>Standard_v2"]
-            AzureMySQL["MySQL Flexible<br/>Server<br/>B_Standard_B2s"]
-            Maintenance["Maintenance<br/>Page"]
-        end
-
-        subgraph Stage3["Stage 3: Failover<br/>💰 +$400-500/month<br/>⏱️ T+15~75분"]
-            AKS["AKS Cluster<br/>v1.29<br/>3 Nodes"]
-            AKS_Nginx["Nginx Pods<br/>2 replicas"]
-            AKS_Spring["Spring Boot Pods<br/>2 replicas"]
-        end
-    end
-
-    User -->|HTTPS| R53
-    R53 -->|Monitor| HC1
-    R53 -->|Monitor| HC2
-    HC1 -->|Health Check| ALB
-    HC2 -->|Health Check| AppGW
-
-    R53 -.->|Primary<br/>Healthy| ALB
-    R53 -.->|Failover<br/>Unhealthy| AppGW
-
-    ALB --> IGW
-    IGW --> NAT
-    NAT --> Nginx
-    NAT --> Spring
-
-    Nginx -->|proxy_pass<br/>:8080| Spring
-    Spring -->|JDBC<br/>:3306| RDS
-
-    EKS_Web -.->|Host| Nginx
-    EKS_WAS -.->|Host| Spring
-
-    Backup -->|mysqldump<br/>5분 간격| RDS
-    Backup -->|Upload<br/>gzip| Blob
-
-    AppGW -->|Stage 1<br/>Static Site| Blob
-    AppGW -->|Stage 2<br/>Restore DB| AzureMySQL
-    AppGW -->|Stage 3<br/>Full Stack| AKS
-
-    AKS -.->|Deploy| AKS_Nginx
-    AKS -.->|Deploy| AKS_Spring
-
-    AKS_Nginx -->|proxy_pass| AKS_Spring
-    AKS_Spring -->|JDBC| AzureMySQL
-
-    Blob -.->|Restore<br/>Latest Backup| AzureMySQL
-
-    style AWS fill:#e3f2fd,stroke:#1976d2,stroke-width:3px
-    style Azure fill:#ffe0e0,stroke:#d32f2f,stroke-width:3px
-    style DNS fill:#f0f4c3,stroke:#f57f17,stroke-width:2px
-    style VPC fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
-    style WebTier fill:#f3e5f5,stroke:#7b1fa2
-    style WASTier fill:#fce4ec,stroke:#c2185b
-    style RDSTier fill:#e0f2f1,stroke:#00796b
-    style Stage1 fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
-    style Stage2 fill:#ffccbc,stroke:#d84315,stroke-width:2px
-    style Stage3 fill:#ffab91,stroke:#bf360c,stroke-width:2px
-```
+**주요 구성 요소:**
+- **DNS:** Route53 Hosted Zone, Primary/Secondary Health Checks
+- **AWS:** VPC (10.0.0.0/16), Web/WAS/RDS Tier, EKS Cluster, ALB
+- **Azure:** VNet (172.16.0.0/16), Blob Storage, App Gateway, MySQL Flexible Server, AKS Cluster
+- **Backup:** EC2 인스턴스에서 5분 간격으로 mysqldump → Azure Blob 업로드
 
 ---
 
@@ -121,276 +31,152 @@ graph TB
 
 ### **정상 운영 시 (AWS)**
 
-```mermaid
-sequenceDiagram
-    participant User as 👥 User
-    participant R53 as Route53
-    participant ALB as AWS ALB
-    participant Nginx as Nginx Pod
-    participant Spring as Spring Boot
-    participant RDS as RDS MySQL
-    participant Backup as Backup EC2
-    participant Blob as Azure Blob
+> 📊 **다이어그램 파일:** [diagrams/data-flow-normal.mmd](diagrams/data-flow-normal.mmd)
 
-    User->>R53: DNS Query (domain.com)
-    R53->>User: Primary: ALB IP
-    User->>ALB: HTTPS Request
-    ALB->>Nginx: HTTP :8080
-    Nginx->>Spring: Proxy :8080
-    Spring->>RDS: JDBC :3306
-    RDS-->>Spring: Data
-    Spring-->>Nginx: Response
-    Nginx-->>ALB: Response
-    ALB-->>User: HTTPS Response
+**요청 흐름:**
+1. User → Route53 DNS 질의 (domain.com)
+2. Route53 → Primary ALB IP 반환
+3. User → ALB HTTPS 요청
+4. ALB → Nginx Pod (:8080)
+5. Nginx → Spring Boot Proxy (:8080)
+6. Spring Boot → RDS MySQL JDBC 연결 (:3306)
+7. RDS → 데이터 반환
+8. Response: Spring → Nginx → ALB → User
 
-    loop Every 5 minutes
-        Backup->>RDS: mysqldump
-        RDS-->>Backup: backup.sql
-        Backup->>Blob: Upload gzip
-    end
-```
+**백업 프로세스 (5분 간격):**
+- Backup EC2 → RDS (mysqldump)
+- Backup EC2 → Azure Blob (gzip 압축 업로드)
 
 ### **페일오버 시나리오 (AWS → Azure)**
 
-```mermaid
-sequenceDiagram
-    participant User as 👥 User
-    participant R53 as Route53
-    participant HC as Health Check
-    participant ALB as AWS ALB
-    participant AppGW as Azure AppGW
-    participant Blob as Blob Storage
-    participant MySQL as Azure MySQL
-    participant AKS as AKS Cluster
+> 📊 **다이어그램 파일:** [diagrams/data-flow-failover.mmd](diagrams/data-flow-failover.mmd)
 
-    Note over ALB: AWS Failure
-    HC->>ALB: Health Check
-    ALB-->>HC: Timeout (3 failures)
-    HC->>R53: Mark Unhealthy
+**장애 감지 및 전환:**
+1. **T+0s:** AWS ALB 장애 발생
+2. **T+30s:** Health Check 시작 (매 30초)
+3. **T+90s:** 3번 연속 실패 → UNHEALTHY 마킹
+4. **T+150s:** Route53 DNS 레코드 전환 (Azure AppGW)
+5. **T+210s:** 사용자 요청 → Azure로 리다이렉트
 
-    Note over R53: T+90s: DNS Failover
-    User->>R53: DNS Query
-    R53->>User: Secondary: AppGW IP
+**Stage 1: Maintenance Page (즉시)**
+- User → AppGW → Blob Storage (Static Website)
+- 유지보수 페이지 표시
 
-    Note over AppGW,Blob: Stage 1: Maintenance Page
-    User->>AppGW: HTTPS Request
-    AppGW->>Blob: Static Website
-    Blob-->>AppGW: index.html
-    AppGW-->>User: Maintenance Page
+**Stage 2: DB Restore (T+0~15분)**
+- Blob Storage → Azure MySQL (최신 백업 복구)
+- AppGW → MySQL 연결
 
-    Note over MySQL: Stage 2: DB Restore (T+0~15분)
-    Blob->>MySQL: Restore Latest Backup
-
-    Note over AKS: Stage 3: Full Failover (T+15~75분)
-    AKS->>AKS: Deploy Pods
-    AppGW->>AKS: Route Traffic
-    AKS->>MySQL: Connect DB
-    User->>AppGW: HTTPS Request
-    AppGW->>AKS: Forward
-    AKS-->>AppGW: Response
-    AppGW-->>User: Full Service
-```
+**Stage 3: Full Failover (T+15~75분)**
+- AKS Cluster 배포 (Nginx + Spring Boot Pods)
+- AppGW → AKS → MySQL
+- 정상 서비스 복원
 
 ---
 
 ## 📊 AWS VPC 네트워크 아키텍처
 
-```mermaid
-graph TB
-    subgraph Internet["🌐 Internet"]
-        Users["Users"]
-    end
+> 📊 **다이어그램 파일:** [diagrams/aws-vpc-network.mmd](diagrams/aws-vpc-network.mmd)
 
-    subgraph AZ1["Availability Zone: ap-northeast-2a"]
-        subgraph Public1["Public Subnet<br/>10.0.1.0/24"]
-            IGW1["Internet Gateway"]
-            NAT1["NAT Gateway<br/>Elastic IP"]
-        end
+**VPC 구성 (10.0.0.0/16):**
+- **Availability Zones:** ap-northeast-2a, ap-northeast-2c (Multi-AZ)
+- **Public Subnets:** 10.0.1-2.0/24 (Internet Gateway, NAT Gateway)
+- **Web Tier:** 10.0.11-12.0/24 (EKS Web Nodes)
+- **WAS Tier:** 10.0.21-22.0/24 (EKS WAS Nodes, Backup EC2)
+- **RDS Tier:** 10.0.31-32.0/24 (RDS Primary + Standby Multi-AZ)
 
-        subgraph Web1["Web Tier<br/>10.0.11.0/24"]
-            EKS_Web1["EKS Web Node"]
-            SG_Web1["SG: 8080 from ALB"]
-        end
+**Security Groups:**
+- ALB-SG: Inbound 80/443 (from Internet)
+- EKS-WebSG: Inbound 8080 (from ALB)
+- EKS-WASSG: Inbound 8080 (from Web)
+- RDS-SG: Inbound 3306 (from EKS)
+- Backup-SG: Outbound 443 (to Azure)
 
-        subgraph WAS1["WAS Tier<br/>10.0.21.0/24"]
-            EKS_WAS1["EKS WAS Node"]
-            Backup1["Backup EC2"]
-            SG_WAS1["SG: 8080 from Web"]
-        end
-
-        subgraph RDS1["RDS Tier<br/>10.0.31.0/24"]
-            RDS_Primary["RDS Primary"]
-            SG_RDS1["SG: 3306 from EKS"]
-        end
-    end
-
-    subgraph AZ2["Availability Zone: ap-northeast-2c"]
-        subgraph Public2["Public Subnet<br/>10.0.2.0/24"]
-            NAT2["NAT Gateway<br/>Optional"]
-        end
-
-        subgraph Web2["Web Tier<br/>10.0.12.0/24"]
-            EKS_Web2["EKS Web Node"]
-        end
-
-        subgraph WAS2["WAS Tier<br/>10.0.22.0/24"]
-            EKS_WAS2["EKS WAS Node"]
-        end
-
-        subgraph RDS2["RDS Tier<br/>10.0.32.0/24"]
-            RDS_Standby["RDS Standby<br/>Multi-AZ"]
-        end
-    end
-
-    ALB["Application<br/>Load Balancer"]
-
-    Users -->|HTTPS| ALB
-    ALB --> IGW1
-    IGW1 --> NAT1
-    NAT1 --> EKS_Web1
-    NAT1 --> EKS_WAS1
-    NAT1 --> EKS_Web2
-    NAT1 --> EKS_WAS2
-
-    EKS_Web1 --> SG_Web1
-    EKS_WAS1 --> SG_WAS1
-    RDS_Primary --> SG_RDS1
-
-    EKS_WAS1 -->|Private| RDS_Primary
-    RDS_Primary <-.->|Sync Replication| RDS_Standby
-
-    style AZ1 fill:#e3f2fd,stroke:#1976d2
-    style AZ2 fill:#e3f2fd,stroke:#1976d2
-    style Public1 fill:#fff3e0,stroke:#f57c00
-    style Public2 fill:#fff3e0,stroke:#f57c00
-    style Web1 fill:#f3e5f5,stroke:#7b1fa2
-    style Web2 fill:#f3e5f5,stroke:#7b1fa2
-    style WAS1 fill:#fce4ec,stroke:#c2185b
-    style WAS2 fill:#fce4ec,stroke:#c2185b
-    style RDS1 fill:#e0f2f1,stroke:#00796b
-    style RDS2 fill:#e0f2f1,stroke:#00796b
-```
+**네트워크 흐름:**
+- Users → ALB (HTTPS)
+- ALB → Internet Gateway → NAT Gateway
+- NAT → EKS Web/WAS Nodes (Private)
+- EKS WAS → RDS Primary (Private)
+- RDS Primary ↔ RDS Standby (동기식 복제)
 
 ---
 
 ## 🔵 Azure VNet 네트워크 아키텍처
 
-```mermaid
-graph TB
-    subgraph Internet2["🌐 Internet"]
-        Users2["Users<br/>Failover"]
-    end
+> 📊 **다이어그램 파일:** [diagrams/azure-vnet-network.mmd](diagrams/azure-vnet-network.mmd)
 
-    subgraph RG["Resource Group: Korea Central"]
-        subgraph VNet["VNet: 172.16.0.0/16"]
-            subgraph AppGW_Subnet["App Gateway Subnet<br/>172.16.1.0/24"]
-                AppGW2["Application Gateway<br/>Public IP<br/>Standard_v2"]
-                NSG_AppGW["NSG: 80/443"]
-            end
+**VNet 구성 (172.16.0.0/16):**
+- **Resource Group:** Korea Central
+- **App Gateway Subnet:** 172.16.1.0/24 (Public IP, Standard_v2)
+- **Web Subnet:** 172.16.11.0/24 (AKS Web Nodes, Stage 3)
+- **WAS Subnet:** 172.16.21.0/24 (AKS App Nodes, Stage 3)
+- **DB Subnet:** 172.16.31.0/24 (MySQL Flexible Server, Stage 2)
+- **AKS Subnet:** 172.16.41.0/24 (AKS System & User Nodes)
 
-            subgraph Web_Subnet["Web Subnet<br/>172.16.11.0/24"]
-                AKS_Web["AKS Web Nodes<br/>Stage 3"]
-                NSG_Web2["NSG: 8080"]
-            end
+**Network Security Groups:**
+- AppGW-NSG: Inbound 80/443 (Internet)
+- Web-NSG: Inbound 8080 (from App Gateway)
+- WAS-NSG: Inbound 8080 (from Web)
+- DB-NSG: Inbound 3306 (from WAS)
+- AKS-NSG: Inbound 443 (Kubernetes API)
 
-            subgraph WAS_Subnet["WAS Subnet<br/>172.16.21.0/24"]
-                AKS_WAS["AKS App Nodes<br/>Stage 3"]
-                NSG_WAS2["NSG: 8080"]
-            end
+**스토리지:**
+- Blob Storage: mysql-backups (Stage 1)
+- Static Website: 유지보수 페이지 호스팅
 
-            subgraph DB_Subnet["DB Subnet<br/>172.16.31.0/24"]
-                MySQL2["MySQL Flexible<br/>Server<br/>Stage 2"]
-                NSG_DB["NSG: 3306"]
-            end
-
-            subgraph AKS_Subnet["AKS Subnet<br/>172.16.41.0/24"]
-                AKS2["AKS System<br/>& User Nodes"]
-                NSG_AKS["NSG: 443"]
-            end
-        end
-
-        Blob2["Blob Storage<br/>mysql-backups<br/>Static Website<br/>Stage 1"]
-    end
-
-    Users2 -->|Failover| AppGW2
-    AppGW2 -->|Stage 1| Blob2
-    AppGW2 -->|Stage 2| MySQL2
-    AppGW2 -->|Stage 3| AKS2
-
-    AKS2 --> AKS_Web
-    AKS2 --> AKS_WAS
-    AKS_WAS --> MySQL2
-
-    Blob2 -.->|Restore| MySQL2
-
-    style RG fill:#ffe0e0,stroke:#d32f2f,stroke-width:2px
-    style VNet fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style AppGW_Subnet fill:#fff3e0,stroke:#f57c00
-    style Web_Subnet fill:#f3e5f5,stroke:#7b1fa2
-    style WAS_Subnet fill:#fce4ec,stroke:#c2185b
-    style DB_Subnet fill:#e0f2f1,stroke:#00796b
-    style AKS_Subnet fill:#e1f5fe,stroke:#01579b
-```
+**네트워크 흐름:**
+- Users (Failover) → App Gateway
+- App Gateway → Blob (Stage 1) / MySQL (Stage 2) / AKS (Stage 3)
+- AKS → Web/WAS Nodes → MySQL
+- Blob → MySQL (백업 복구)
 
 ---
 
 ## 🚀 Azure 3단계 페일오버 전략
 
-```mermaid
-stateDiagram-v2
-    [*] --> Stage1_Always: 평상시 (AWS 정상)
+> 📊 **다이어그램 파일:** [diagrams/azure-failover-stages.mmd](diagrams/azure-failover-stages.mmd)
 
-    state "Stage 1: Always-On" as Stage1_Always {
-        [*] --> VNet_Ready
-        VNet_Ready --> Blob_Active
-        Blob_Active --> Backup_Receiving
-        Backup_Receiving --> Static_Website
+### **Stage 1: Always-On** (평상시)
+**비용:** $50-100/month
+**구성 요소:**
+- VNet (예약, 무료)
+- Blob Storage (LRS)
+- 30일 백업 보관
+- Static Website 호스팅
 
-        note right of Blob_Active
-            💰 Cost: $50-100/month
-            - VNet (예약, 무료)
-            - Blob Storage (LRS)
-            - 30일 백업 보관
-        end note
-    }
+**상태:**
+- VNet 준비 완료
+- Blob Storage 활성화
+- 백업 수신 중 (5분 간격)
+- 유지보수 페이지 대기
 
-    Stage1_Always --> Stage2_Emergency: AWS 장애 감지<br/>(T+0분)
+### **Stage 2: Emergency Response** (AWS 장애 감지 시)
+**비용:** +$200-300/month
+**소요 시간:** 10-15분
+**배포 순서:**
+1. Application Gateway 활성화
+2. MySQL Flexible Server 배포
+3. 최신 백업 복구 (Blob → MySQL)
+4. 유지보수 페이지 표시 (AppGW → Blob)
 
-    state "Stage 2: Emergency Response" as Stage2_Emergency {
-        [*] --> Deploy_AppGW
-        Deploy_AppGW --> Deploy_MySQL
-        Deploy_MySQL --> Restore_DB
-        Restore_DB --> Show_Maintenance
+**전환:** T+0분 (AWS 장애 감지 즉시)
 
-        note right of Deploy_MySQL
-            💰 Cost: +$200-300/month
-            ⏱️ Time: 10-15분
-            - App Gateway 활성화
-            - MySQL 복구
-            - 유지보수 페이지
-        end note
-    }
+### **Stage 3: Complete Failover** (완전 복구)
+**비용:** +$400-500/month
+**소요 시간:** 15-20분
+**배포 순서:**
+1. AKS 클러스터 생성 (v1.29, 3 nodes)
+2. Nginx + Spring Boot Pods 배포
+3. MySQL 데이터베이스 연결
+4. 정상 서비스 제공 (AppGW → AKS → MySQL)
 
-    Stage2_Emergency --> Stage3_Failover: 완전 복구 필요<br/>(T+15분)
+**전환:** T+15분 (Stage 2 완료 후)
 
-    state "Stage 3: Complete Failover" as Stage3_Failover {
-        [*] --> Deploy_AKS
-        Deploy_AKS --> Deploy_Pods
-        Deploy_Pods --> Connect_DB
-        Connect_DB --> Full_Service
-
-        note right of Deploy_AKS
-            💰 Cost: +$400-500/month
-            ⏱️ Time: 15-20분
-            - AKS 클러스터
-            - Nginx + Spring Boot
-            - 정상 서비스
-        end note
-    }
-
-    Stage3_Failover --> AWS_Recovered: AWS 복구 완료
-    AWS_Recovered --> Stage1_Always: Failback
-```
+### **Failback** (AWS 복구 완료)
+- AWS 인프라 정상화 확인
+- Route53 Health Check → HEALTHY
+- DNS 자동 전환 (Azure → AWS)
+- Azure Stage 3 → Stage 1로 축소
+- 비용 절감 ($700-900/month → $50-100/month)
 
 ---
 
@@ -675,6 +461,14 @@ Stage 2-3 Terraform 코드를 준비하고 긴급 시 `terraform apply` 실행:
 ├── README.md
 ├── docs/
 │   ├── architecture.md (이 문서)
+│   ├── diagrams/
+│   │   ├── README.md (다이어그램 사용 가이드)
+│   │   ├── system-architecture.mmd
+│   │   ├── data-flow-normal.mmd
+│   │   ├── data-flow-failover.mmd
+│   │   ├── aws-vpc-network.mmd
+│   │   ├── azure-vnet-network.mmd
+│   │   └── azure-failover-stages.mmd
 │   ├── failover.md
 │   └── backup.md
 ├── codes/
@@ -708,43 +502,30 @@ Stage 2-3 Terraform 코드를 준비하고 긴급 시 `terraform apply` 실행:
 └── .gitignore
 ```
 
----
 
-## ✅ 체크리스트
-
-### **배포 전 확인**
-
-- [ ] AWS 계정 접근 가능 (ap-northeast-2 region)
-- [ ] Azure 구독 접근 가능 (Korea Central region)
-- [ ] Terraform v1.0+ 설치
-- [ ] kubectl 설치
-- [ ] AWS CLI v2 설치
-- [ ] Azure CLI 설치
-- [ ] Domain name 소유 (Route53 hosted zone 생성 가능)
-- [ ] ACM SSL 인증서 요청 (AWS)
-
-### **배포 후 확인**
-
-- [ ] AWS EKS 클러스터 정상 실행
-- [ ] 모든 Pod RUNNING 상태
-- [ ] RDS MySQL 데이터베이스 접근 가능
-- [ ] ALB가 Nginx & Spring Boot 정상 응답
-- [ ] Route53 Health Check: Primary HEALTHY
-- [ ] Azure Blob에 첫 백업 파일 생성
-- [ ] DNS failover 테스트 성공
-
-### **운영 준비**
-
-- [ ] CloudWatch 대시보드 설정
-- [ ] Azure Monitor 알림 설정
-- [ ] 백업 복구 테스트
-- [ ] DR 테스트 계획 수립
-- [ ] 팀 교육 (운영 절차)
-- [ ] 비상 연락처 등록
-- [ ] 문서화 완료
 
 ---
 
-**마지막 업데이트:** 2025-12-22
-**작성자:** DevOps Team
-**상태:** Production Ready
+## 📊 다이어그램 파일 정보
+
+모든 Mermaid 다이어그램은 별도 파일로 분리되어 있습니다.
+- **위치:** [docs/diagrams/](diagrams/)
+- **사용 가이드:** [docs/diagrams/README.md](diagrams/README.md)
+
+**파일 목록:**
+1. [system-architecture.mmd](diagrams/system-architecture.mmd) - 전체 시스템 아키텍처
+2. [data-flow-normal.mmd](diagrams/data-flow-normal.mmd) - 정상 운영 시 데이터 흐름
+3. [data-flow-failover.mmd](diagrams/data-flow-failover.mmd) - 페일오버 시나리오
+4. [aws-vpc-network.mmd](diagrams/aws-vpc-network.mmd) - AWS VPC 네트워크
+5. [azure-vnet-network.mmd](diagrams/azure-vnet-network.mmd) - Azure VNet 네트워크
+6. [azure-failover-stages.mmd](diagrams/azure-failover-stages.mmd) - Azure 3단계 페일오버
+
+**렌더링 방법:**
+- Mermaid CLI: `mmdc -i <input.mmd> -o <output.png>`
+- VS Code: Mermaid Preview 확장 사용
+- 온라인: [Mermaid Live Editor](https://mermaid.live/)
+
+---
+
+**마지막 업데이트:** 2025-12-23
+**작성자:** I2ST-blue
