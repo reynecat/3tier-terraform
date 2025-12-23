@@ -12,6 +12,10 @@
   - [3.1 MySQL 백업 연결 문제](#31-mysql-백업-연결-문제)
 - [4. Terraform 배포 관련 문제]
 
+- [5. Kubernetes 배포 관련 문제]
+
+- [6. Route53 및 DNS 관련 문제]
+
 
 ---
 
@@ -1588,9 +1592,436 @@ kubectl get nodes
 
 ---
 
+### 8.3 Application Gateway TLS 정책 오류
 
+#### 증상
+```
+Error: creating Application Gateway: unexpected status 400 (400 Bad Request)
+with error: ApplicationGatewayDeprecatedTlsVersionUsedInSslPolicy:
+The TLS policy AppGwSslPolicy20150501 for Application Gateway is using
+a deprecated TLS version.
+```
 
+#### 원인
+- Application Gateway의 기본 TLS 정책이 deprecated됨
+- `ssl_policy` 블록이 명시적으로 설정되지 않아 기본값 사용
 
-**문서 버전**: v1.3
-**최종 수정**: 2024-12-23
+#### 해결방법
+
+**codes/azure/2-failover/main.tf 수정**
+```hcl
+resource "azurerm_application_gateway" "main" {
+  name                = "appgw-${var.environment}"
+  location            = data.azurerm_resource_group.main.location
+  resource_group_name = data.azurerm_resource_group.main.name
+
+  # ... 다른 설정 ...
+
+  # SSL Policy 추가
+  ssl_policy {
+    policy_type = "Predefined"
+    policy_name = "AppGwSslPolicy20220101"  # TLS 1.2+ 지원
+  }
+
+  tags = var.tags
+}
+```
+
+**지원되는 TLS 정책**:
+- `AppGwSslPolicy20220101` - TLS 1.2+ (권장)
+- `AppGwSslPolicy20170401S` - TLS 1.2+ Strict
+- `AppGwSslPolicy20220101S` - TLS 1.2+ Strict (최신)
+
+---
+
+### 8.4 Application Gateway Backend Pool 참조 오류
+
+#### 증상
+```
+Error: updating Application Gateway: unexpected status 400 (400 Bad Request)
+with error: InvalidResourceReference: Resource backendAddressPools/aks-backend-pool
+referenced by requestRoutingRules/http-routing-rule was not found.
+```
+
+#### 원인
+- Terraform lifecycle의 `ignore_changes`가 backend pool 변경을 무시
+- Backend pool 이름 변경 시 routing rule이 새 pool을 찾지 못함
+
+#### 해결방법
+
+**1단계: lifecycle ignore_changes 제거**
+```hcl
+resource "azurerm_application_gateway" "main" {
+  # ... 설정 ...
+
+  tags = var.tags
+
+  # 문제가 되는 부분 제거
+  # lifecycle {
+  #   ignore_changes = [
+  #     backend_address_pool,
+  #     backend_http_settings,
+  #     probe
+  #   ]
+  # }
+}
+```
+
+**2단계: Terraform 재적용**
+```bash
+cd codes/azure/2-failover
+terraform apply
+```
+
+**참고**: `ignore_changes`는 수동으로 backend를 변경할 계획이 있을 때만 사용하세요.
+
+---
+
+### 8.5 AKS PetClinic Pod CrashLoopBackOff (MySQL 연결 실패)
+
+#### 증상
+```bash
+kubectl get pods -n petclinic
+# NAME                         READY   STATUS             RESTARTS
+# petclinic-5974c78cd-c7dvf   0/1     CrashLoopBackOff   38
+```
+
+#### 원인
+- MySQL 방화벽에 AKS outbound IP가 허용되지 않음
+- `Communications link failure` 오류 발생
+
+#### 해결방법
+
+**1단계: Pod 로그 확인**
+```bash
+kubectl logs petclinic-5974c78cd-c7dvf -n petclinic --tail=50
+
+# 오류 확인:
+# Caused by: com.mysql.cj.exceptions.CJCommunicationsException:
+# Communications link failure
+```
+
+**2단계: AKS Outbound IP 확인**
+```bash
+# AKS의 나가는 IP 확인
+az aks show -g rg-dr-blue -n aks-dr-blue \
+  --query "networkProfile.loadBalancerProfile.effectiveOutboundIPs[].id" \
+  -o tsv
+
+# Public IP 주소 조회
+az network public-ip show --ids <IP_RESOURCE_ID> \
+  --query ipAddress -o tsv
+```
+
+**3단계: MySQL 방화벽 규칙 추가**
+```bash
+# AKS outbound IP를 MySQL 방화벽에 추가
+az mysql flexible-server firewall-rule create \
+  -g rg-dr-blue \
+  -n mysql-dr-blue \
+  --rule-name AllowAKS \
+  --start-ip-address <AKS_OUTBOUND_IP> \
+  --end-ip-address <AKS_OUTBOUND_IP>
+
+# 예시:
+az mysql flexible-server firewall-rule create \
+  -g rg-dr-blue \
+  -n mysql-dr-blue \
+  --rule-name AllowAKS \
+  --start-ip-address 20.249.162.115 \
+  --end-ip-address 20.249.162.115
+```
+
+**4단계: PetClinic 재시작**
+```bash
+kubectl rollout restart deployment petclinic -n petclinic
+
+# Pod 상태 확인
+kubectl get pods -n petclinic -w
+```
+
+**5단계: 연결 확인**
+```bash
+# Pod 로그에서 성공 메시지 확인
+kubectl logs -f deployment/petclinic -n petclinic | grep "Started"
+
+# 출력 예시:
+# Started PetClinicApplication in 16.159 seconds
+```
+
+---
+
+### 8.6 CloudFront Origin Failover POST/PUT/DELETE 메서드 제한
+
+#### 증상
+```
+Error: The parameter AllowedMethods cannot include POST, PUT, PATCH, or DELETE
+for a cached behavior associated with an origin group.
+```
+
+#### 원인
+- CloudFront Origin Group(failover)은 캐시 가능한 요청(GET, HEAD)만 지원
+- POST, PUT, DELETE 등 비캐시 메서드는 Origin Group과 함께 사용 불가
+
+#### 해결방법
+
+**방법 1: Origin Group 제거 (수동 failover)**
+
+```bash
+# CloudFront 설정 가져오기
+aws cloudfront get-distribution-config --id E2OX3Z0XHNDUN > /tmp/cf-config.json
+
+# Python 스크립트로 수정
+cat > /tmp/remove-origin-group.py << 'EOF'
+import json
+
+with open('/tmp/cf-config.json', 'r') as f:
+    data = json.load(f)
+
+config = data['DistributionConfig']
+etag = data['ETag']
+
+# Origin Group 제거
+config['OriginGroups'] = {
+    "Quantity": 0,
+    "Items": []
+}
+
+# 단일 origin 사용
+config['DefaultCacheBehavior']['TargetOriginId'] = 'primary-aws-alb'
+
+# 모든 HTTP 메서드 허용
+config['DefaultCacheBehavior']['AllowedMethods'] = {
+    "Quantity": 7,
+    "Items": ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"],
+    "CachedMethods": {
+        "Quantity": 2,
+        "Items": ["GET", "HEAD"]
+    }
+}
+
+with open('/tmp/cf-config-updated.json', 'w') as f:
+    json.dump(config, f)
+
+print(f"ETag: {etag}")
+EOF
+
+python3 /tmp/remove-origin-group.py
+
+# CloudFront 업데이트
+aws cloudfront update-distribution \
+  --id E2OX3Z0XHNDUN \
+  --distribution-config file:///tmp/cf-config-updated.json \
+  --if-match <ETAG>
+```
+
+**방법 2: 캐싱 완전 비활성화**
+
+```bash
+# CachingDisabled 정책 사용
+cat > /tmp/update-cache-policy.py << 'EOF'
+import json
+
+with open('/tmp/cf-config.json', 'r') as f:
+    data = json.load(f)
+
+config = data['DistributionConfig']
+
+# CachingDisabled 관리형 정책 적용
+config['DefaultCacheBehavior']['CachePolicyId'] = '4135ea2d-6df8-44a3-9df3-4b5a84be39ad'
+
+# ForwardedValues 제거 (CachePolicy 사용 시 불필요)
+if 'ForwardedValues' in config['DefaultCacheBehavior']:
+    del config['DefaultCacheBehavior']['ForwardedValues']
+
+with open('/tmp/cf-config-nocache.json', 'w') as f:
+    json.dump(config, f)
+EOF
+
+python3 /tmp/update-cache-policy.py
+```
+
+**참고**: Origin Group 제거 시 자동 failover가 불가능하므로, 장애 시 수동으로 origin을 변경해야 합니다.
+
+---
+
+### 8.7 CloudFront Secondary Origin으로 수동 전환
+
+#### 배경
+Origin Group을 제거한 후, AWS 장애 시 수동으로 Azure로 전환해야 함
+
+#### 절차
+
+**1단계: Application Gateway DNS 이름 설정**
+```bash
+# Public IP에 DNS 레이블 추가
+az network public-ip update \
+  -g rg-dr-blue \
+  -n pip-appgw-blue \
+  --dns-name appgw-blue-dr
+
+# FQDN 확인
+az network public-ip show \
+  -g rg-dr-blue \
+  -n pip-appgw-blue \
+  --query "dnsSettings.fqdn" -o tsv
+
+# 출력: appgw-blue-dr.koreacentral.cloudapp.azure.com
+```
+
+**2단계: CloudFront Origin을 Azure로 전환**
+```bash
+# 현재 설정 가져오기
+aws cloudfront get-distribution-config \
+  --id E2OX3Z0XHNDUN > /tmp/cf-switch.json
+
+# Python으로 origin 변경
+cat > /tmp/switch-to-azure.py << 'EOF'
+import json
+
+with open('/tmp/cf-switch.json', 'r') as f:
+    data = json.load(f)
+
+config = data['DistributionConfig']
+etag = data['ETag']
+
+# Secondary origin으로 전환
+config['DefaultCacheBehavior']['TargetOriginId'] = 'secondary-azure'
+
+with open('/tmp/cf-azure.json', 'w') as f:
+    json.dump(config, f)
+
+print(f"ETag: {etag}")
+EOF
+
+python3 /tmp/switch-to-azure.py
+
+# CloudFront 업데이트
+aws cloudfront update-distribution \
+  --id E2OX3Z0XHNDUN \
+  --distribution-config file:///tmp/cf-azure.json \
+  --if-match <ETAG>
+```
+
+**3단계: 배포 완료 대기**
+```bash
+# 배포 상태 확인 (5-10분 소요)
+while true; do
+  STATUS=$(aws cloudfront get-distribution --id E2OX3Z0XHNDUN --query "Distribution.Status" --output text)
+  echo "Status: $STATUS"
+  if [ "$STATUS" = "Deployed" ]; then
+    break
+  fi
+  sleep 15
+done
+```
+
+**4단계: 접속 확인**
+```bash
+# 도메인으로 접속 테스트
+curl -I https://blueisthenewblack.store/
+
+# 출력에서 확인:
+# HTTP/2 200
+# x-cache: Miss from cloudfront
+```
+
+---
+
+### 8.8 Application Gateway Backend IP 하드코딩 문제
+
+#### 증상
+Terraform 코드에서 AKS LoadBalancer IP가 하드코딩되어 있음
+
+```hcl
+backend_address_pool {
+  name         = local.backend_address_pool_name
+  ip_addresses = ["20.214.124.157"]  # 하드코딩!
+}
+```
+
+#### 문제점
+- AKS Service가 재생성되면 LoadBalancer IP 변경 가능
+- 수동으로 IP 업데이트 필요
+- 자동화 불가능
+
+#### 해결방법 (권장)
+
+**방법 1: Data Source로 동적 조회**
+
+```hcl
+# AKS Service 정보를 data source로 가져오기
+data "kubernetes_service" "petclinic" {
+  metadata {
+    name      = "petclinic"
+    namespace = "petclinic"
+  }
+
+  depends_on = [
+    kubernetes_service.petclinic
+  ]
+}
+
+# Application Gateway Backend Pool
+resource "azurerm_application_gateway" "main" {
+  # ...
+
+  backend_address_pool {
+    name         = local.backend_address_pool_name
+    ip_addresses = [
+      data.kubernetes_service.petclinic.status[0].load_balancer[0].ingress[0].ip
+    ]
+  }
+}
+```
+
+**방법 2: 외부 스크립트로 자동 업데이트**
+
+```bash
+#!/bin/bash
+# update-appgw-backend.sh
+
+# AKS LoadBalancer IP 조회
+AKS_LB_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+# Application Gateway Backend Pool 업데이트
+az network application-gateway address-pool update \
+  -g rg-dr-blue \
+  --gateway-name appgw-blue \
+  -n aks-backend-pool \
+  --servers $AKS_LB_IP
+
+echo "Backend updated to: $AKS_LB_IP"
+```
+
+**방법 3: Terraform null_resource로 자동화**
+
+```hcl
+resource "null_resource" "update_appgw_backend" {
+  triggers = {
+    petclinic_service = kubernetes_service.petclinic.id
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      LB_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+      az network application-gateway address-pool update \
+        -g rg-dr-blue \
+        --gateway-name appgw-blue \
+        -n aks-backend-pool \
+        --servers $LB_IP
+    EOT
+  }
+
+  depends_on = [
+    kubernetes_service.petclinic,
+    azurerm_application_gateway.main
+  ]
+}
+```
+
+---
+
+**문서 버전**: v1.4
+**최종 수정**: 2025-12-23
 **작성자**: I2ST-blue

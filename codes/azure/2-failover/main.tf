@@ -169,12 +169,10 @@ resource "azurerm_public_ip" "appgw" {
 
 # Local variables for App Gateway configuration
 locals {
-  blob_fqdn = "${var.storage_account_name}.z12.web.core.windows.net"
-
-  backend_address_pool_name      = "blob-backend-pool"
+  backend_address_pool_name      = "aks-backend-pool"
   frontend_port_name_http        = "http-port"
   frontend_ip_configuration_name = "appgw-frontend-ip"
-  http_setting_name              = "blob-http-settings"
+  http_setting_name              = "aks-http-settings"
   listener_name                  = "http-listener"
   request_routing_rule_name      = "http-routing-rule"
   probe_name                     = "health-probe"
@@ -209,32 +207,32 @@ resource "azurerm_application_gateway" "main" {
     port = 80
   }
 
-  # Backend Pool - 초기에는 Blob Storage를 가리킴
+  # Backend Pool - AKS PetClinic LoadBalancer
   backend_address_pool {
-    name  = local.backend_address_pool_name
-    fqdns = [local.blob_fqdn]
+    name         = local.backend_address_pool_name
+    ip_addresses = ["20.214.124.157"]
   }
 
-  # HTTP Settings - Blob Storage용 (HTTPS)
+  # HTTP Settings - AKS PetClinic용 (HTTP)
   backend_http_settings {
-    name                                = local.http_setting_name
-    cookie_based_affinity               = "Disabled"
-    port                                = 443
-    protocol                            = "Https"
-    request_timeout                     = 60
-    pick_host_name_from_backend_address = true
-    probe_name                          = local.probe_name
+    name                  = local.http_setting_name
+    cookie_based_affinity = "Disabled"
+    port                  = 8080
+    protocol              = "Http"
+    request_timeout       = 60
+    probe_name            = local.probe_name
   }
 
-  # Health Probe - Blob Storage 점검
+  # Health Probe - AKS PetClinic 점검
   probe {
-    name                                      = local.probe_name
-    protocol                                  = "Https"
-    path                                      = "/"
-    interval                                  = 30
-    timeout                                   = 20
-    unhealthy_threshold                       = 3
-    pick_host_name_from_backend_http_settings = true
+    name                = local.probe_name
+    protocol            = "Http"
+    path                = "/"
+    interval            = 30
+    timeout             = 20
+    unhealthy_threshold = 3
+    host                = "20.214.124.157"
+    port                = 8080
 
     match {
       status_code = ["200-399"]
@@ -259,13 +257,11 @@ resource "azurerm_application_gateway" "main" {
     priority                   = 100
   }
 
-  tags = var.tags
-
-  lifecycle {
-    ignore_changes = [
-      backend_address_pool,
-      backend_http_settings,
-      probe
-    ]
+  # SSL Policy - Use modern TLS version
+  ssl_policy {
+    policy_type = "Predefined"
+    policy_name = "AppGwSslPolicy20220101"
   }
+
+  tags = var.tags
 }
