@@ -11,37 +11,48 @@ AWS (Primary) ↔ Azure (Secondary DR)
 2. [사전 준비](#2-사전-준비)
 3. [1단계: 평상시 대기 (1-always)](#3-1단계-평상시-대기-1-always)
 4. [AWS Primary Site 구축](#4-aws-primary-site-구축)
-5. [2단계: 긴급 대응 (2-emergency)](#5-2단계-긴급-대응-2-emergency)
-6. [3단계: 완전 복구 (3-failover)](#6-3단계-완전-복구-3-failover)
-7. [장애 시뮬레이션 테스트](#7-장애-시뮬레이션-테스트)
-8. [Failback 절차](#8-failback-절차)
-9. [트러블슈팅](#9-트러블슈팅)
+5. [2단계: 완전 복구 (2-failover)](#5-2단계-완전-복구-2-failover)
+6. [장애 시뮬레이션 테스트](#6-장애-시뮬레이션-테스트)
+7. [Failback 절차](#7-failback-절차)
+8. [트러블슈팅](#8-트러블슈팅)
 
 ---
 
 ## 1. 시스템 개요
 
-### 1.1 아키텍처
+### 1.1 프로젝트 구조
 
+```
+3tier-terraform/
+├── codes/
+│   ├── aws/
+│   │   ├── service/          # AWS 인프라 (VPC, EKS, RDS, Backup)
+│   │   ├── route53/          # Route53 DNS 및 Health Check
+│   │   └── monitoring/       # CloudWatch 모니터링
+│   └── azure/
+│       ├── 1-always/         # 평상시 대기 (Storage, VNet)
+│       └── 2-failover/       # 재해 복구 (MySQL, AKS)
+├── docs/                     # 문서
+└── README.md                 # 사용자 가이드
+```
 
-### 1.2 재해 대응 시나리오
+### 1.2 아키텍처
+
+이 시스템은 AWS를 Primary Site로, Azure를 DR Site로 사용하는 Multi-Cloud 재해 복구 솔루션입니다.
+
+### 1.3 재해 대응 시나리오
 
 #### 1단계 (1-always): 평상시 대기
 - **목적**: 최소 비용으로 DR 준비 상태 유지
 - **배포 대상**: Azure Storage Account, VNet 예약
 - **실행 상태**: AWS에서 정상 서비스, Azure는 백업만 수신
 
-#### 2단계 (2-emergency): 긴급 대응 (T+0 ~ T+15분)
-- **목적**: 사용자에게 점검 페이지 노출, DB 복구
-- **배포 대상**: Application Gateway, MySQL Flexible Server
-- **실행 상태**: 점검 페이지 표시, 데이터베이스 복구 완료
-
-#### 3단계 (3-failover): 완전 복구 (T+15 ~ T+75분)
+#### 2단계 (2-failover): 완전 복구 (T+0 ~ T+20분)
 - **목적**: Azure에서 전체 서비스 복구
-- **배포 대상**: AKS 클러스터, PetClinic 애플리케이션
+- **배포 대상**: MySQL Flexible Server, AKS 클러스터, PetClinic 애플리케이션
 - **실행 상태**: Azure에서 완전한 서비스 제공
 
-### 1.3 핵심 기능
+### 1.4 핵심 기능
 
 1. **자동 Failover**: Route53 Health Check 기반 DNS 자동 전환
 2. **주기적 백업**: AWS RDS → Azure Blob Storage (설정 가능)
@@ -49,7 +60,7 @@ AWS (Primary) ↔ Azure (Secondary DR)
 4. **완전한 격리**: AWS 장애 시 Azure만으로 독립 운영
 
 
-### 1.4 고려되고 있는 추가 사항들
+### 1.5 고려되고 있는 추가 사항들
 1. **네트워크 아키텍처 변경** Amazon CloudFront, VPC End Point, Azure Front Door 적용 유무
 2. **CI/CD**
 ---
@@ -129,7 +140,7 @@ echo "Tenant ID: $AZURE_TENANT_ID"
 ```bash
 # GitHub에서 프로젝트 클론
 git clone https://github.com/reynecat/3tier-terraform.git
-cd 3tier-terraform/PlanB
+cd 3tier-terraform
 ```
 
 ### 2.5 도메인 준비
@@ -147,13 +158,13 @@ cd 3tier-terraform/PlanB
 ### 3.1 설정 파일 작성
 
 ```bash
-cd azure/1-always
+cd codes/azure/1-always
 cp terraform.tfvars.example terraform.tfvars
 ```
 
 **terraform.tfvars 수정**:
 ```hcl
-environment = "prod"
+environment = "blue"
 location    = "koreacentral"
 
 # Storage Account (전역 고유 이름 필요)
@@ -223,7 +234,7 @@ curl https://$(terraform output -raw storage_account_name).z12.web.core.windows.
 ### 4.1 설정 파일 작성
 
 ```bash
-cd ../../aws
+cd ../../aws/service
 cp terraform.tfvars.example terraform.tfvars
 ```
 
@@ -276,7 +287,13 @@ domain_name          = "yourdomain.com"
 
 ### 4.2 인프라 배포
 
+**주의**: AWS 인프라는 service, monitoring, route53 세 개의 디렉토리로 분리되어 있습니다. 순차적으로 배포해야 합니다.
+
+#### 4.2.1 Service 인프라 배포 (VPC, EKS, RDS)
+
 ```bash
+cd ~/3tier-terraform/codes/aws/service
+
 # 초기화
 terraform init
 
@@ -295,8 +312,7 @@ terraform output > outputs.txt
 - EKS 클러스터 + 노드 그룹 (Web/WAS 분리)
 - RDS MySQL Multi-AZ
 - Backup EC2 인스턴스
-- Route53 Health Check (Primary)
-- Secrets Manager
+- OIDC Provider for EKS
 
 ### 4.3 kubectl 설정
 
@@ -354,7 +370,7 @@ kubectl get namespaces | grep -E "web|was"
 
 ```bash
 # RDS 정보 확인
-cd ~/3tier-terraform/PlanB/aws
+cd ~/3tier-terraform/codes/aws/service
 export RDS_ENDPOINT=$(terraform output -raw rds_endpoint)
 export RDS_HOST=$(echo $RDS_ENDPOINT | cut -d':' -f1)
 
@@ -446,30 +462,32 @@ curl -I http://$ALB_DNS
 
 **중요**: 이 단계는 Ingress 배포(4.5.5) 이후에만 수행 가능
 
-### 4.6.1 Ingress 배포 후 Terraform 재실행
+### 4.6.1 Route53 설정
+
+Route53 레코드와 Health Check를 설정합니다.
+
 ```bash
-cd ~/3tier-terraform/PlanB/aws
+cd ~/3tier-terraform/codes/aws/route53
 
-# Ingress ALB 생성 확인 (2-3분 대기)
-kubectl get ingress web-ingress -n web -w
-# Ctrl+C로 중단
+# terraform.tfvars 파일 생성 및 수정
+cp terraform.tfvars.example terraform.tfvars
+# 도메인 이름 등 필수 변수 입력
 
-# ALB DNS 확인
-kubectl get ingress web-ingress -n web -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-echo
+# 초기화
+terraform init
 
 # Terraform apply로 Route53 레코드 자동 생성
-terraform.tfvars에서 enable_custom_domain = true로 변경
 terraform apply
 
-# 출력에서 ALB 정보 확인
-terraform output route53_alb_info
+# 출력 확인
+terraform output
 ```
 
-**자동으로 수행되는 작업:**
-1. Ingress가 생성한 ALB 자동 조회
-2. ALB DNS와 Zone ID를 Route53 Primary 레코드에 설정
-3. Health Check를 ALB FQDN으로 구성
+**배포되는 리소스:**
+1. Route53 Hosted Zone (또는 기존 Zone 사용)
+2. Primary A Record (AWS ALB 연결)
+3. Secondary A Record (Azure 연결, Failover용)
+4. Health Check (Primary, Secondary)
 
 #### 4.6.2 DNS 전파 확인
 
@@ -494,8 +512,22 @@ echo "https://yourdomain.com"
 
 ```
 
-### 4.7 백업 시스템 확인
-byemyblue
+### 4.7 Monitoring 설정 (선택사항)
+
+CloudWatch 모니터링을 설정합니다.
+
+```bash
+cd ~/3tier-terraform/codes/aws/monitoring
+
+# terraform.tfvars 파일 생성 및 수정
+cp terraform.tfvars.example terraform.tfvars
+
+# 초기화 및 배포
+terraform init
+terraform apply
+```
+
+### 4.8 백업 시스템 확인
 ```bash
 # 백업 인스턴스 ID 확인
 terraform output backup_instance_id
@@ -540,21 +572,21 @@ az storage blob list \
 
 ---
 
-## 5. 2단계: 긴급 대응 (2-emergency)
+## 5. 2단계: 완전 복구 (2-failover)
 
-**목적**: 재해 발생 후 15분 이내에 점검 페이지 노출 및 DB 복구
+**목적**: 재해 발생 후 Azure에서 전체 서비스 복구
 
 ### 5.1 시나리오
 
 - AWS ap-northeast-2 리전 완전 마비
 - Route53 Primary Health Check 실패 감지
-- 사용자에게 점검 페이지 표시 필요
-- 데이터베이스 최신 백업으로 복구
+- Azure에서 MySQL, AKS 클러스터, PetClinic 애플리케이션 배포
+- 최신 백업으로 데이터베이스 복구
 
 ### 5.2 설정 파일 작성
 
 ```bash
-cd ~/3tier-terraform/PlanB/azure/2-emergency
+cd ~/3tier-terraform/codes/azure/2-failover
 cp terraform.tfvars.example terraform.tfvars
 ```
 
@@ -580,178 +612,7 @@ mysql_sku        = "B_Standard_B2s"
 mysql_storage_gb = 20
 ```
 
-### 5.3 배포 (T+0 ~ T+15분)
-
-```bash
-# 초기화
-terraform init
-
-# 배포 (10-15분 소요)
-terraform apply
-
-# 출력 확인
-terraform output
-```
-
-**배포되는 리소스**:
-- MySQL Flexible Server (B_Standard_B2s)
-- Application Gateway (Standard_v2)
-- Public IP (App Gateway용)
-
-### 5.4 점검 페이지 확인
-
-```bash
-# App Gateway Public IP 확인
-export APPGW_IP=$(terraform output -raw appgw_public_ip)
-
-echo "점검 페이지 URL: http://$APPGW_IP"
-
-# 브라우저 접속 또는 curl
-curl http://$APPGW_IP
-
-# 점검 페이지가 보이면 성공
-```
-
-### 5.5 MySQL 백업 복구
-
-```bash
-cd scripts
-chmod +x restore-db.sh
-
-# 복구 실행
-
-# 현재 방화벽 규칙 확인
-az mysql flexible-server firewall-rule list \
-  --resource-group rg-dr-blue \
-  --name mysql-dr-blue \
-  --output table
-
-# EC2의 Public IP 확인
-curl -s ifconfig.me
-
-# 방화벽 규칙 추가
-EC2_IP=$(curl -s ifconfig.me)
-
-az mysql flexible-server firewall-rule create \
-  --resource-group rg-dr-blue \
-  --name mysql-dr-blue \
-  --rule-name AllowEC2 \
-  --start-ip-address $EC2_IP \
-  --end-ip-address $EC2_IP
-
-# 연결 테스트
-mysql -h mysql-dr-blue.mysql.database.azure.com \
-      -u mysqladmin \
-      -p
-./restore-db.sh
-
-# 프롬프트에서 비밀번호 입력: byemyblue1! byemyblue1!
-```
-
-**restore-db.sh 실행 과정**:
-1. 최신 백업 파일 찾기
-2. Azure Blob Storage에서 다운로드
-3. 압축 해제
-4. MySQL 복구
-
-**예상 소요 시간**: 5-10분 (백업 크기에 따라)
-
-./restore-db.sh
-==========================================
-MySQL 백업 복구 (Plan B - Emergency)
-시작 시간: Sun Dec 21 21:59:17 UTC 2025
-==========================================
-
-설정 정보:
-  MySQL Host: mysql-dr-blue.mysql.database.azure.com
-  Resource Group: rg-dr-blue
-  Storage Account: bloberry01
-
-MySQL Password: 
-
-[1/4] 최신 백업 파일 찾기...
-최신 백업: backups/backup-20251221-215501.sql.gz
-
-[2/4] 백업 다운로드...
-
-
-Finished[#############################################################]  100.0000%
-
-
-[3/4] 압축 해제...
-
-[4/4] MySQL 복구...
-mysql: [Warning] Using a password on the command line interface can be insecure.
-
-==========================================
-MySQL 백업 복구 완료!
-==========================================
-
-MySQL Host: mysql-dr-blue.mysql.database.azure.com
-Database: petclinic
-
-다음 단계:
-  1. MySQL 연결 테스트
-     mysql -h mysql-dr-blue.mysql.database.azure.com -u mysqladmin -p
-
-  2. 3단계 배포
-     cd ../../3-failover && terraform apply
-
-### 5.6 Route53 Secondary 설정
-
-```bash
-# AWS 환경으로 돌아가기
-cd ~/3tier-terraform/PlanB/aws
-
-# Azure App Gateway IP를 terraform.tfvars에 추가
-echo "azure_appgw_public_ip = \"$APPGW_IP\"" >> terraform.tfvars
-
-# Terraform apply (Route53 Secondary 레코드 생성)
-terraform apply
-
-# Health Check 확인
-aws route53 get-health-check \
-  --health-check-id $(terraform output -json route53_health_check_ids | jq -r '.secondary')
-```
-
-**2단계 완료!**
-
-**현재 상태**:
-- 점검 페이지가 사용자에게 노출됨
-- MySQL 복구 완료
-- Route53 Secondary Health Check 활성화
-- AWS 복구 시 자동으로 Primary로 복귀
-
----
-
-## 6. 3단계: 완전 복구 (3-failover)
-
-**목적**: Azure에서 전체 서비스 복구 (재해 장기화 시)
-
-### 6.1 시나리오
-
-- AWS 복구 불가능 또는 장기화
-- Azure에서 완전한 서비스 제공 필요
-- AKS 클러스터에 PetClinic 배포
-
-### 6.2 설정 파일 작성
-
-```bash
-cd ~/3tier-terraform/PlanB/azure/3-failover
-cp terraform.tfvars.example terraform.tfvars
-```
-
-**terraform.tfvars 수정**:
-```hcl
-
-# Azure 구독 정보 
-subscription_id = "YOUR_SUBSCRIPTION_ID"
-tenant_id       = "YOUR_TENANT_ID"
-
-
-```
-
-### 6.3 AKS 클러스터 배포 (T+15 ~ T+35분)
+### 5.3 배포 (T+0 ~ T+20분)
 
 ```bash
 # 초기화
@@ -762,85 +623,167 @@ terraform apply
 
 # kubectl 설정
 az aks get-credentials \
-  --resource-group rg-dr-prod \
+  --resource-group rg-dr-blue \
   --name $(terraform output -raw aks_cluster_name) \
   --overwrite-existing
 
 # 클러스터 확인
 kubectl get nodes
 kubectl cluster-info
+
+# 출력 확인
+terraform output
 ```
 
-### 6.4 PetClinic 배포 (T+35 ~ T+45분)
+**배포되는 리소스**:
+- MySQL Flexible Server (B_Standard_B2s)
+- AKS 클러스터 (Azure Kubernetes Service)
+
+### 5.4 MySQL 백업 복구
+
+Azure MySQL에서 최신 백업 파일을 다운로드하여 복구합니다.
 
 ```bash
-cd scripts
-chmod +x deploy-petclinic.sh
+# 최신 백업 파일 찾기
+LATEST_BACKUP=$(az storage blob list \
+  --account-name bloberry01 \
+  --container-name mysql-backups \
+  --query "sort_by([].name, &properties.lastModified)[-1]" \
+  --output tsv)
 
-# 배포 실행
-./deploy-petclinic.sh
+echo "최신 백업: $LATEST_BACKUP"
+
+# 백업 다운로드
+az storage blob download \
+  --account-name bloberry01 \
+  --container-name mysql-backups \
+  --name "$LATEST_BACKUP" \
+  --file /tmp/backup.sql.gz
+
+# 압축 해제
+gunzip /tmp/backup.sql.gz
+
+# MySQL 서버 FQDN 확인
+export MYSQL_HOST=$(cd ~/3tier-terraform/codes/azure/2-failover && terraform output -raw mysql_fqdn)
+
+# MySQL 복구
+mysql -h $MYSQL_HOST -u mysqladmin -p < /tmp/backup.sql
 
 # 프롬프트에서 비밀번호 입력: byemyblue1!
 ```
 
-**deploy-petclinic.sh 실행 과정**:
-1. Namespace 생성 (petclinic)
-2. MySQL Secret 생성
-3. PetClinic Deployment 생성
-4. Service 생성
-5. Pod 시작 대기
+**예상 소요 시간**: 5-10분 (백업 크기에 따라)
 
-### 6.5 Application Gateway 업데이트 (T+45 ~ T+50분)
+### 5.5 PetClinic 애플리케이션 배포
 
 ```bash
-chmod +x update-appgw.sh
+# Namespace 생성
+kubectl create namespace petclinic
 
-# App Gateway를 점검 페이지에서 AKS로 전환
-./update-appgw.sh
+# MySQL Secret 생성
+kubectl create secret generic db-credentials \
+  --from-literal=url="jdbc:mysql://${MYSQL_HOST}:3306/petclinic" \
+  --from-literal=username="mysqladmin" \
+  --from-literal=password="byemyblue1!" \
+  --namespace=petclinic
+
+# PetClinic Deployment 생성 (Spring Boot 애플리케이션)
+cat <<EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: petclinic
+  namespace: petclinic
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: petclinic
+  template:
+    metadata:
+      labels:
+        app: petclinic
+    spec:
+      containers:
+      - name: petclinic
+        image: springcommunity/spring-petclinic:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: SPRING_DATASOURCE_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: url
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: username
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: password
+EOF
+
+# Service 생성 (LoadBalancer 타입)
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: petclinic
+  namespace: petclinic
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: petclinic
+EOF
+
+# Pod 시작 확인
+kubectl get pods -n petclinic -w
+# Ctrl+C로 중단
+
+# Service External IP 확인
+kubectl get svc petclinic -n petclinic
 ```
 
-**update-appgw.sh 실행 과정**:
-1. PetClinic Service IP 확인
-2. Backend Pool 업데이트
-3. HTTP Settings 업데이트
-4. Health Probe 업데이트
-
-### 6.6 서비스 확인
+### 5.6 서비스 접속 확인
 
 ```bash
-# App Gateway Public IP 확인
-export APPGW_IP=$(az network public-ip show \
-  --resource-group rg-dr-prod \
-  --name pip-appgw-prod \
-  --query ipAddress -o tsv)
+# External IP 확인 (2-3분 소요)
+export EXTERNAL_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
-echo "PetClinic URL: http://$APPGW_IP"
+echo "PetClinic URL: http://$EXTERNAL_IP"
 
-# 접속 테스트
-curl -I http://$APPGW_IP
+# 브라우저 접속 또는 curl
+curl -I http://$EXTERNAL_IP
 
-# 브라우저 접속
-echo "브라우저에서 접속: http://$APPGW_IP"
+# 브라우저에서 접속
+echo "브라우저에서 접속: http://$EXTERNAL_IP"
 ```
 
-**3단계 완료!**
+**2단계 완료!**
 
 **현재 상태**:
-- Azure AKS에서 PetClinic 완전 복구
-- Application Gateway → AKS 연결
-- Route53 Secondary가 Azure를 가리킴
-- 사용자는 정상 서비스 이용 가능
+- Azure MySQL에서 데이터베이스 복구 완료
+- AKS 클러스터에서 PetClinic 정상 실행
+- LoadBalancer를 통해 외부 접속 가능
+- Route53 Failover를 통해 사용자는 Azure 사이트로 자동 전환
 
 ---
 
-## 7. 장애 시뮬레이션 테스트
+## 6. 장애 시뮬레이션 테스트
 
-### 7.1 AWS Primary 장애 시뮬레이션
+### 6.1 AWS Primary 장애 시뮬레이션
 
 #### 방법 1: EKS 노드 그룹 스케일 다운
 
 ```bash
-cd ~/3tier-terraform/PlanB/aws
+cd ~/3tier-terraform/codes/aws/service
 
 # Web 노드 그룹 스케일 다운
 aws eks update-nodegroup-config \
@@ -897,12 +840,12 @@ aws ec2 revoke-security-group-ingress \
   --cidr 0.0.0.0/0
 ```
 
-### 7.2 Failover 확인
+### 6.2 Failover 확인
 
 ```bash
 # Route53 Health Check 상태 확인
 aws route53 get-health-check-status \
-  --health-check-id $(cd ~/3tier-terraform/PlanB/aws && \
+  --health-check-id $(cd ~/3tier-terraform/codes/aws/route53 && \
     terraform output -json route53_health_check_ids | jq -r '.primary')
 
 # 출력 예시:
@@ -920,7 +863,7 @@ echo "https://yourdomain.com"
 # Azure에서 서비스되는 PetClinic이 보여야 함
 ```
 
-### 7.3 Failover 소요 시간 측정
+### 6.3 Failover 소요 시간 측정
 
 ```bash
 # 장애 발생 시각 기록
@@ -935,7 +878,7 @@ echo "장애 시작: $(date)"
 # 총 Failover 시간: 약 2-3분
 ```
 
-### 7.4 복구 (Failback 준비)
+### 6.4 복구 (Failback 준비)
 
 #### 방법 1 복구: 노드 그룹 스케일 업
 
@@ -964,7 +907,7 @@ kubectl get pods -A
 #### 방법 2 복구: Ingress 재생성
 
 ```bash
-cd ~/3tier-terraform/PlanB/aws/k8s-manifests
+cd ~/3tier-terraform/codes/aws/service/k8s-manifests
 
 # Ingress 재생성
 kubectl apply -f ingress/ingress.yaml
@@ -991,12 +934,12 @@ aws ec2 authorize-security-group-ingress \
   --cidr 0.0.0.0/0
 ```
 
-### 7.5 Primary 복구 확인
+### 6.5 Primary 복구 확인
 
 ```bash
 # Health Check 상태 확인
 aws route53 get-health-check-status \
-  --health-check-id $(cd ~/3tier-terraform/PlanB/aws && \
+  --health-check-id $(cd ~/3tier-terraform/codes/aws/route53 && \
     terraform output -json route53_health_check_ids | jq -r '.primary')
 
 # 출력 예시:
@@ -1016,13 +959,13 @@ echo "https://yourdomain.com"
 
 ---
 
-## 8. Failback 절차 이건 팀프로젝트 논외
+## 7. Failback 절차
 
-### 8.1 사전 확인
+### 7.1 사전 확인
 
 ```bash
 # AWS Primary 상태 확인
-cd ~/3tier-terraform/PlanB/aws
+cd ~/3tier-terraform/codes/aws/service
 
 # EKS 노드 상태
 kubectl get nodes
@@ -1040,35 +983,31 @@ aws rds describe-db-instances \
   --query 'DBInstances[0].DBInstanceStatus'
 ```
 
-### 8.2 데이터 동기화
+### 7.2 데이터 동기화
 
 **중요**: Failback 전에 Azure의 최신 데이터를 AWS로 동기화해야 함
 
 ```bash
-# Azure MySQL에서 백업 생성
-az mysql flexible-server backup create \
-  --resource-group rg-dr-prod \
-  --server-name mysql-dr-prod \
-  --backup-name manual-failback-$(date +%Y%m%d)
+# Azure MySQL에서 백업 생성 (mysqldump 사용)
+cd ~/3tier-terraform/codes/azure/2-failover
 
-# 또는 mysqldump로 백업
-cd ~/3tier-terraform/PlanB/azure/2-emergency/scripts
+# MySQL 호스트 확인
+MYSQL_HOST=$(terraform output -raw mysql_fqdn)
 
-# 수동 백업 스크립트 실행
-MYSQL_HOST=$(cd .. && terraform output -raw mysql_fqdn)
+# Azure MySQL에서 백업
 mysqldump -h $MYSQL_HOST -u mysqladmin -p \
   --single-transaction \
   --databases petclinic \
   > /tmp/azure-failback-$(date +%Y%m%d).sql
 
 # AWS RDS로 복원
-cd ~/3tier-terraform/PlanB/aws
+cd ~/3tier-terraform/codes/aws/service
 RDS_HOST=$(terraform output -raw rds_address)
 
 mysql -h $RDS_HOST -u admin -p < /tmp/azure-failback-$(date +%Y%m%d).sql
 ```
 
-### 8.3 Route53 Primary 복구 확인
+### 7.3 Route53 Primary 복구 확인
 
 ```bash
 # Primary Health Check 상태
@@ -1083,7 +1022,7 @@ aws route53 list-resource-record-sets \
 # Primary 복구 확인 후 자동 Failback됨 (1-2분)
 ```
 
-### 8.4 Failback 확인
+### 7.4 Failback 확인
 
 ```bash
 # DNS 조회
@@ -1105,16 +1044,11 @@ aws route53 get-health-check-status \
   --query 'HealthCheckObservations[0].StatusReport.Status'
 ```
 
-### 8.5 Azure 리소스 정리 
-
+### 7.5 Azure 리소스 정리
 
 ```bash
-# 3-failover 리소스 삭제 (AKS)
-cd ~/3tier-terraform/PlanB/azure/3-failover
-terraform destroy
-
-# 2-emergency 리소스 삭제 (App Gateway, MySQL)
-cd ../2-emergency
+# 2-failover 리소스 삭제 (AKS, MySQL)
+cd ~/3tier-terraform/codes/azure/2-failover
 terraform destroy
 
 # 1-always는 유지 (백업 수신)
@@ -1124,9 +1058,9 @@ terraform destroy
 
 ---
 
-## 9. 트러블슈팅
+## 8. 트러블슈팅
 
-### 9.1 AWS Load Balancer Controller 설치 실패
+### 8.1 AWS Load Balancer Controller 설치 실패
 
 #### 증상
 ```
@@ -1140,7 +1074,7 @@ aws-load-balancer-controller   0/2     0            0
 
 #### 해결
 ```bash
-cd ~/3tier-terraform/PlanB/aws
+cd ~/3tier-terraform/codes/aws/service
 
 # 1. 변수 확인
 export CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
@@ -1218,7 +1152,7 @@ kubectl rollout restart deployment aws-load-balancer-controller -n kube-system
 kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
 ```
 
-### 9.2 WAS Pod CrashLoopBackOff
+### 8.2 WAS Pod CrashLoopBackOff
 
 #### 증상
 ```
@@ -1241,7 +1175,7 @@ echo
 # 3. 비밀번호가 틀렸다면 Secret 재생성
 kubectl delete secret db-credentials -n was
 
-export RDS_HOST=$(cd ~/3tier-terraform/PlanB/aws && terraform output -raw rds_address)
+export RDS_HOST=$(cd ~/3tier-terraform/codes/aws/service && terraform output -raw rds_address)
 
 kubectl create secret generic db-credentials \
   --from-literal=url="jdbc:mysql://${RDS_HOST}:3306/petclinic" \
@@ -1256,7 +1190,7 @@ kubectl rollout restart deployment was-spring -n was
 kubectl logs -f deployment/was-spring -n was
 ```
 
-### 9.3 ALB 생성 안됨
+### 8.3 ALB 생성 안됨
 
 #### 증상
 ```
@@ -1276,7 +1210,7 @@ kubectl describe ingress web-ingress -n web
 kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=100
 
 # 2. Public Subnet 태그 추가
-cd ~/3tier-terraform/PlanB/aws
+cd ~/3tier-terraform/codes/aws/service
 export VPC_ID=$(terraform output -raw vpc_id)
 export CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
 export PUBLIC_SUBNET_IDS=$(terraform output -json public_subnet_ids | jq -r '.[]')
@@ -1303,7 +1237,7 @@ kubectl apply -f k8s-manifests/ingress/ingress.yaml
 kubectl get ingress web-ingress -n web -w
 ```
 
-### 9.4 Route53 DNS 전파 안됨
+### 8.4 Route53 DNS 전파 안됨
 
 #### 증상
 ```bash
@@ -1319,7 +1253,7 @@ dig yourdomain.com
 ```bash
 # 1. Route53 네임서버 확인
 aws route53 get-hosted-zone \
-  --id $(cd ~/3tier-terraform/PlanB/aws && terraform output -raw route53_zone_id) \
+  --id $(cd ~/3tier-terraform/codes/aws/route53 && terraform output -raw route53_zone_id) \
   --query 'DelegationSet.NameServers'
 
 # 2. 도메인 등록 업체에서 네임서버 확인
@@ -1334,7 +1268,7 @@ dig $(kubectl get ingress web-ingress -n web -o jsonpath='{.status.loadBalancer.
 echo "ALB_IP yourdomain.com" | sudo tee -a /etc/hosts
 ```
 
-### 9.5 Azure 백업 복구 실패
+### 8.5 Azure 백업 복구 실패
 
 #### 증상
 ```
@@ -1378,7 +1312,7 @@ az storage blob download \
 
 gunzip /tmp/backup.sql.gz
 
-mysql -h $(cd ~/3tier-terraform/PlanB/azure/2-emergency && terraform output -raw mysql_fqdn) \
+mysql -h $(cd ~/3tier-terraform/codes/azure/2-failover && terraform output -raw mysql_fqdn) \
   -u mysqladmin -p < /tmp/backup.sql
 ```
 
