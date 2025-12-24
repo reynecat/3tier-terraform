@@ -2022,6 +2022,298 @@ resource "null_resource" "update_appgw_backend" {
 
 ---
 
-**문서 버전**: v1.4
-**최종 수정**: 2025-12-23
+## 9. CloudFront 및 Multi-Cloud DR 관련 문제
+
+### 9.1 CloudFront에서 502 Bad Gateway 에러
+
+#### 증상
+```bash
+curl https://blueisthenewblack.store
+# HTTP/2 502
+# x-cache: Error from cloudfront
+```
+
+#### 원인
+CloudFront Origin이 HTTPS로 설정되었지만 ALB의 SSL 인증서가 도메인과 일치하지 않음
+
+#### 해결방법
+
+**1단계: Origin Protocol 확인**
+```bash
+# CloudFront 설정 확인
+aws cloudfront get-distribution-config --id E2OX3Z0XHNDUN \
+  --query "DistributionConfig.Origins.Items[?Id=='primary-aws-alb'].CustomOriginConfig.OriginProtocolPolicy" \
+  --output text
+
+# 출력: https-only (문제!)
+```
+
+**2단계: HTTP로 변경**
+```bash
+# 설정 다운로드
+aws cloudfront get-distribution-config --id E2OX3Z0XHNDUN > /tmp/cf-config.json
+
+# OriginProtocolPolicy를 http-only로 변경
+# (JSON 편집기 또는 jq 사용)
+
+# 업데이트
+ETAG=$(jq -r '.ETag' /tmp/cf-config.json)
+jq '.DistributionConfig' /tmp/cf-config.json > /tmp/cf-update.json
+
+aws cloudfront update-distribution \
+  --id E2OX3Z0XHNDUN \
+  --distribution-config file:///tmp/cf-update.json \
+  --if-match "$ETAG"
+```
+
+---
+
+### 9.2 Web Pod가 Pending 상태 (Node Affinity 불일치)
+
+#### 증상
+```bash
+kubectl get pods -n web
+# NAME                       READY   STATUS    RESTARTS   AGE
+# web-nginx-xxx             0/1     Pending   0          5m
+```
+
+#### 원인
+- Web deployment가 `tier=web` 라벨이 있는 노드를 요구
+- 노드 그룹이 존재하지 않거나 스케일이 0으로 설정됨
+
+#### 해결방법
+
+**1단계: Pod 스케줄링 실패 원인 확인**
+```bash
+kubectl describe pod -n web | grep -A 10 "Events:"
+
+# 출력 예시:
+# Warning  FailedScheduling  node(s) didn't match Pod's node affinity/selector
+```
+
+**2단계: 노드 그룹 확인**
+```bash
+# EKS 노드 그룹 목록
+aws eks list-nodegroups --cluster-name blue-eks --region ap-northeast-2
+
+# 노드 그룹 상세 정보
+aws eks describe-nodegroup \
+  --cluster-name blue-eks \
+  --nodegroup-name blue-web-nodes \
+  --region ap-northeast-2 \
+  --query "nodegroup.scalingConfig"
+
+# 출력 예시:
+# {
+#   "minSize": 0,
+#   "maxSize": 1,
+#   "desiredSize": 0  <- 문제!
+# }
+```
+
+**3단계: 노드 그룹 스케일 업**
+```bash
+# Web 노드 그룹을 2개로 스케일 업
+aws eks update-nodegroup-config \
+  --cluster-name blue-eks \
+  --nodegroup-name blue-web-nodes \
+  --scaling-config minSize=2,maxSize=4,desiredSize=2 \
+  --region ap-northeast-2
+
+# 노드가 Ready 상태가 될 때까지 대기
+kubectl get nodes -l tier=web -w
+```
+
+**4단계: Pod 상태 확인**
+```bash
+# Pod가 자동으로 스케줄링됨
+kubectl get pods -n web
+
+# 출력:
+# NAME                       READY   STATUS    RESTARTS   AGE
+# web-nginx-xxx             1/1     Running   0          2m
+```
+
+---
+
+### 9.3 ALB에서 404 Not Found (Ingress Host 헤더 문제)
+
+#### 증상
+```bash
+curl http://k8s-web-webingre-xxx.ap-northeast-2.elb.amazonaws.com
+# HTTP/1.1 404 Not Found
+```
+
+#### 원인
+- Ingress 규칙이 특정 Host 헤더를 요구함
+- CloudFront는 Origin의 DNS 이름을 Host 헤더로 전송
+- ALB 룰이 `Host: blueisthenewblack.store`만 허용
+
+#### 해결방법
+
+**1단계: ALB 리스너 규칙 확인**
+```bash
+# ALB ARN 확인
+ALB_ARN=$(aws elbv2 describe-load-balancers \
+  --query "LoadBalancers[?contains(DNSName, 'k8s-web-webingre')].LoadBalancerArn" \
+  --output text)
+
+# 리스너 확인
+LISTENER_ARN=$(aws elbv2 describe-listeners \
+  --load-balancer-arn "$ALB_ARN" \
+  --query "Listeners[0].ListenerArn" \
+  --output text)
+
+# 룰 확인
+aws elbv2 describe-rules --listener-arn "$LISTENER_ARN" \
+  --query "Rules[].Conditions[?Field=='host-header']"
+
+# 출력:
+# "Values": ["blueisthenewblack.store"]  <- Host 헤더 요구
+```
+
+**2단계: Ingress에서 Host 제한 제거**
+```yaml
+# k8s-manifests/ingress/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-ingress
+  namespace: web
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+spec:
+  ingressClassName: alb
+  rules:
+  - http:  # host 필드 제거
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-service
+            port:
+              number: 80
+```
+
+**3단계: Ingress 재적용**
+```bash
+kubectl apply -f k8s-manifests/ingress/ingress.yaml
+
+# ALB 업데이트 대기 (30초)
+sleep 30
+
+# 테스트
+curl -I http://k8s-web-webingre-xxx.ap-northeast-2.elb.amazonaws.com
+# HTTP/1.1 200 OK
+```
+
+---
+
+### 9.4 ALB SSL 리다이렉트 루프
+
+#### 증상
+```bash
+curl http://k8s-web-webingre-xxx.ap-northeast-2.elb.amazonaws.com
+# HTTP/1.1 301 Moved Permanently
+# Location: https://...
+```
+
+CloudFront는 HTTP로 연결하려고 하는데 ALB가 HTTPS로 리다이렉트
+
+#### 원인
+Ingress 설정에 `alb.ingress.kubernetes.io/ssl-redirect: '443'` 존재
+
+#### 해결방법
+
+**Ingress에서 SSL 리다이렉트 제거**
+```yaml
+# k8s-manifests/ingress/ingress.yaml
+metadata:
+  annotations:
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'  # HTTPS 제거
+    # alb.ingress.kubernetes.io/ssl-redirect: '443' <- 이 줄 삭제
+```
+
+```bash
+# 적용
+kubectl apply -f k8s-manifests/ingress/ingress.yaml
+
+# 테스트
+curl -I http://k8s-web-webingre-xxx.ap-northeast-2.elb.amazonaws.com
+# HTTP/1.1 200 OK
+```
+
+---
+
+### 9.5 CloudFront 캐시 무효화
+
+#### 배경
+CloudFront 설정 변경 후에도 이전 응답이 캐시되어 반환될 수 있음
+
+#### 해결방법
+
+```bash
+# 모든 캐시 무효화
+DISTRIBUTION_ID=$(aws cloudfront list-distributions \
+  --query "DistributionList.Items[0].Id" \
+  --output text)
+
+aws cloudfront create-invalidation \
+  --distribution-id "$DISTRIBUTION_ID" \
+  --paths "/*"
+
+# 무효화 상태 확인
+aws cloudfront get-invalidation \
+  --distribution-id "$DISTRIBUTION_ID" \
+  --id <INVALIDATION_ID>
+```
+
+---
+
+### 9.6 Web/WAS 노드 그룹 구성 요약
+
+#### 정상 상태 확인
+
+```bash
+# 1. 노드 그룹 확인
+kubectl get nodes --show-labels | grep tier
+
+# 출력 예시:
+# ip-10-0-11-89   Ready   tier=web
+# ip-10-0-12-204  Ready   tier=web
+# ip-10-0-21-63   Ready   tier=was
+# ip-10-0-22-168  Ready   tier=was
+
+# 2. Pod 배치 확인
+kubectl get pods -n web -o wide
+kubectl get pods -n was -o wide
+
+# 3. EKS 노드 그룹 스케일 확인
+aws eks describe-nodegroup \
+  --cluster-name blue-eks \
+  --nodegroup-name blue-web-nodes \
+  --query "nodegroup.scalingConfig"
+```
+
+#### 권장 설정
+
+```bash
+# Web 노드 그룹
+minSize: 2
+maxSize: 4
+desiredSize: 2
+
+# WAS 노드 그룹
+minSize: 2
+maxSize: 4
+desiredSize: 2
+```
+
+---
+
+**문서 버전**: v1.5
+**최종 수정**: 2025-12-24
 **작성자**: I2ST-blue
