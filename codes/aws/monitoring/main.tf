@@ -1,5 +1,9 @@
 # aws/monitoring/main.tf
 # EKS 컨테이너 모니터링 및 자동 복구 설정
+#
+# 참고: Container Insights 메트릭 수집은 EKS 모듈의
+# amazon-cloudwatch-observability 애드온에서 자동으로 처리됩니다.
+# 이 모듈은 수집된 메트릭을 기반으로 알람, 대시보드, 자동 복구만 설정합니다.
 
 terraform {
   required_version = ">= 1.14.0"
@@ -71,6 +75,8 @@ resource "aws_sns_topic_subscription" "email" {
 # =================================================
 # CloudWatch Log Group for Container Insights
 # =================================================
+# 참고: 로그 그룹은 CloudWatch Observability 애드온이 자동 생성하지만,
+# Terraform으로 관리하면 보존 기간 등을 명시적으로 제어할 수 있습니다.
 
 resource "aws_cloudwatch_log_group" "container_insights" {
   name              = "/aws/containerinsights/${var.eks_cluster_name}/performance"

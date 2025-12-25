@@ -61,7 +61,60 @@ kubectl get nodes
 
 ## 2. Container Insights 활성화
 
-### 2.1 CloudWatch Agent 설치
+### 2.1 EKS Observability 애드온 사용 (권장)
+
+EKS의 **amazon-cloudwatch-observability** 애드온을 사용하면 CloudWatch Agent와 Fluent Bit가 자동으로 설치됩니다.
+수동으로 Agent를 설치할 필요가 없습니다.
+
+**방법 1: AWS 콘솔에서 활성화 (가장 간단)**
+1. EKS 콘솔 → 클러스터 선택 (blue-eks)
+2. "추가 기능(Add-ons)" 탭 클릭
+3. "추가 기능 가져오기" 클릭
+4. "Amazon CloudWatch Observability" 선택
+5. 설치 확인
+
+**방법 2: AWS CLI로 활성화**
+```bash
+# CloudWatch Observability 애드온 설치
+aws eks create-addon \
+  --cluster-name blue-eks \
+  --addon-name amazon-cloudwatch-observability \
+  --region ap-northeast-2
+
+# 설치 상태 확인
+aws eks describe-addon \
+  --cluster-name blue-eks \
+  --addon-name amazon-cloudwatch-observability \
+  --region ap-northeast-2
+```
+
+**방법 3: Terraform으로 관리 (IaC 환경)**
+```hcl
+# codes/aws/service/modules/eks/main.tf에 이미 포함되어 있습니다
+resource "aws_eks_addon" "cloudwatch_observability" {
+  cluster_name = aws_eks_cluster.main.name
+  addon_name   = "amazon-cloudwatch-observability"
+}
+```
+
+### 2.2 EKS 컨트롤 플레인 로깅 활성화
+
+```bash
+aws eks update-cluster-config \
+  --name blue-eks \
+  --region ap-northeast-2 \
+  --logging '{"clusterLogging":[{"types":["api","audit","authenticator","controllerManager","scheduler"],"enabled":true}]}'
+```
+
+### 2.3 (선택사항) 수동 설치가 필요한 경우
+
+아래 상황에서만 수동 설치를 고려하세요:
+- 콘솔/CLI 접근 권한이 없는 타인의 인프라
+- 커스텀 설정이 필요한 경우 (수집 주기, 특정 메트릭만 수집 등)
+- 에어갭(air-gapped) 환경
+
+<details>
+<summary>수동 설치 방법 (클릭하여 펼치기)</summary>
 
 ```bash
 # 네임스페이스 생성
@@ -88,32 +141,16 @@ data:
       }
     }
 EOF
-```
 
-### 2.2 Fluent Bit 설치 (로그 수집)
-
-```bash
-# Fluent Bit ConfigMap 생성
+# Fluent Bit 설치
 kubectl apply -f https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/quickstart/cwagent-fluent-bit-quickstart.yaml
 ```
 
-### 2.3 CloudWatch Container Insights 활성화
+</details>
 
-**AWS CLI로 활성화:**
-```bash
-aws eks update-cluster-config \
-  --name blue-eks \
-  --region ap-northeast-2 \
-  --logging '{"clusterLogging":[{"types":["api","audit","authenticator","controllerManager","scheduler"],"enabled":true}]}'
-```
+### 2.4 CloudWatch Log Group 생성 (선택사항)
 
-**또는 AWS 콘솔에서:**
-1. EKS 콘솔 → 클러스터 선택 (blue-eks)
-2. "관찰 가능성" 탭 클릭
-3. "Container Insights 활성화" 클릭
-4. 확인
-
-### 2.4 CloudWatch Log Group 생성
+> **참고:** Observability 애드온이 로그 그룹을 자동 생성하지만, 보존 기간을 명시적으로 설정하려면 아래 명령을 실행하세요.
 
 ```bash
 # Container Insights 성능 로그 그룹
@@ -1198,9 +1235,18 @@ aws cloudwatch put-metric-alarm \
 
 ## 8. 검증 및 테스트
 
-### 8.1 Container Insights 데이터 확인
+### 8.1 Observability 애드온 및 Container Insights 확인
 
 ```bash
+# Observability 애드온 상태 확인
+aws eks describe-addon \
+  --cluster-name blue-eks \
+  --addon-name amazon-cloudwatch-observability \
+  --region ap-northeast-2
+
+# CloudWatch Agent Pod 상태 확인
+kubectl get pods -n amazon-cloudwatch
+
 # 메트릭 확인
 aws cloudwatch list-metrics \
   --namespace ContainerInsights \
@@ -1283,6 +1329,25 @@ https://ap-northeast-2.console.aws.amazon.com/cloudwatch/home?region=ap-northeas
 
 ### 10.1 Container Insights 메트릭이 수집되지 않는 경우
 
+**Observability 애드온 사용 시:**
+```bash
+# 애드온 상태 확인
+aws eks describe-addon \
+  --cluster-name blue-eks \
+  --addon-name amazon-cloudwatch-observability \
+  --region ap-northeast-2
+
+# CloudWatch Agent Pod 상태 확인
+kubectl get pods -n amazon-cloudwatch
+
+# CloudWatch Agent 로그 확인
+kubectl logs -n amazon-cloudwatch -l app.kubernetes.io/name=cloudwatch-agent
+
+# Fluent Bit 로그 확인
+kubectl logs -n amazon-cloudwatch -l app.kubernetes.io/name=fluent-bit
+```
+
+**수동 설치 시:**
 ```bash
 # CloudWatch Agent Pod 상태 확인
 kubectl get pods -n amazon-cloudwatch
@@ -1349,8 +1414,9 @@ aws iam get-role-policy \
 
 ### 배포 완료 체크리스트
 
-- [ ] Container Insights 활성화 완료
-- [ ] CloudWatch Log Groups 생성 완료
+- [ ] CloudWatch Observability 애드온 설치 완료
+- [ ] Container Insights 메트릭 수집 확인
+- [ ] CloudWatch Log Groups 생성 완료 (선택사항)
 - [ ] SNS Topic 및 이메일 구독 설정 완료
 - [ ] Node Level 알람 (5개) 생성 완료
 - [ ] Pod/Container Level 알람 (8개) 생성 완료

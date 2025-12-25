@@ -208,3 +208,26 @@ resource "aws_eks_addon" "coredns" {
     aws_eks_node_group.was,
   ]
 }
+
+# =================================================
+# CloudWatch Observability Add-on (Container Insights)
+# =================================================
+# 이 애드온은 CloudWatch Agent와 Fluent Bit를 자동으로 설치하여
+# Container Insights 메트릭과 로그를 수집합니다.
+# 수동으로 CloudWatch Agent를 설치할 필요가 없습니다.
+
+resource "aws_eks_addon" "cloudwatch_observability" {
+  cluster_name = aws_eks_cluster.main.name
+  addon_name   = "amazon-cloudwatch-observability"
+
+  depends_on = [
+    aws_eks_node_group.web,
+    aws_eks_node_group.was,
+  ]
+}
+
+# CloudWatch Observability 애드온에 필요한 IAM 정책
+resource "aws_iam_role_policy_attachment" "cloudwatch_agent_server_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+  role       = aws_iam_role.eks_nodes.name
+}
