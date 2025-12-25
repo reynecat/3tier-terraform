@@ -25,3 +25,5 @@ appgw-cert.pem
 appgw-key.pem
 
 appgw-selfsigned.pfx
+
+dashboard.json
