@@ -18,7 +18,23 @@ variable "environment" {
 }
 
 variable "alert_email" {
-  description = "알람 수신 이메일 주소"
+  description = "알람 수신 이메일 주소 (deprecated - Slack 사용 권장)"
+  type        = string
+  default     = ""
+}
+
+# =================================================
+# Slack Integration Variables
+# =================================================
+
+variable "slack_workspace_id" {
+  description = "Slack Workspace ID (Team ID) - AWS Chatbot에서 Slack 연동 후 확인 가능"
+  type        = string
+  default     = ""
+}
+
+variable "slack_channel_id" {
+  description = "Slack Channel ID - 알림을 받을 채널 ID"
   type        = string
   default     = ""
 }
@@ -162,6 +178,18 @@ variable "rds_disk_queue_threshold" {
   description = "RDS 디스크 큐 깊이 임계값"
   type        = number
   default     = 10
+}
+
+variable "rds_latency_threshold" {
+  description = "RDS Read/Write Latency 임계값 (초)"
+  type        = number
+  default     = 0.1  # 100ms
+}
+
+variable "rds_freeable_memory_threshold" {
+  description = "RDS Freeable Memory 임계값 (bytes)"
+  type        = number
+  default     = 268435456  # 256MB
 }
 
 # =================================================

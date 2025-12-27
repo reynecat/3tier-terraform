@@ -65,11 +65,65 @@ resource "aws_sns_topic" "alerts" {
   }
 }
 
-resource "aws_sns_topic_subscription" "email" {
-  count     = var.alert_email != "" ? 1 : 0
-  topic_arn = aws_sns_topic.alerts.arn
-  protocol  = "email"
-  endpoint  = var.alert_email
+# =================================================
+# Slack Integration via AWS Chatbot
+# =================================================
+
+# Slack 채널 구성을 위한 AWS Chatbot 설정
+resource "aws_chatbot_slack_channel_configuration" "alerts" {
+  count                  = var.slack_workspace_id != "" && var.slack_channel_id != "" ? 1 : 0
+  configuration_name     = "${var.environment}-eks-monitoring-slack"
+  iam_role_arn           = aws_iam_role.chatbot[0].arn
+  slack_channel_id       = var.slack_channel_id
+  slack_team_id          = var.slack_workspace_id
+  sns_topic_arns         = [aws_sns_topic.alerts.arn]
+  logging_level          = "INFO"
+
+  tags = {
+    Name = "${var.environment}-eks-monitoring-slack"
+  }
+}
+
+# AWS Chatbot IAM Role
+resource "aws_iam_role" "chatbot" {
+  count = var.slack_workspace_id != "" && var.slack_channel_id != "" ? 1 : 0
+  name  = "${var.environment}-chatbot-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "chatbot.amazonaws.com"
+      }
+    }]
+  })
+
+  tags = {
+    Name = "${var.environment}-chatbot-role"
+  }
+}
+
+resource "aws_iam_role_policy" "chatbot" {
+  count = var.slack_workspace_id != "" && var.slack_channel_id != "" ? 1 : 0
+  name  = "${var.environment}-chatbot-policy"
+  role  = aws_iam_role.chatbot[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:Describe*",
+          "cloudwatch:Get*",
+          "cloudwatch:List*"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
 }
 
 # =================================================
@@ -439,6 +493,78 @@ resource "aws_cloudwatch_metric_alarm" "rds_cpu_high" {
 
   tags = {
     Name = "${var.environment}-rds-cpu-high"
+  }
+}
+
+# RDS Read Latency
+resource "aws_cloudwatch_metric_alarm" "rds_read_latency_high" {
+  count               = var.rds_instance_identifier != "" ? 1 : 0
+  alarm_name          = "${var.rds_instance_identifier}-rds-read-latency-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 3
+  metric_name         = "ReadLatency"
+  namespace           = "AWS/RDS"
+  period              = 300
+  extended_statistic  = "p90"
+  threshold           = var.rds_latency_threshold
+  alarm_description   = "RDS Read Latency(p90)가 ${var.rds_latency_threshold}초를 초과했습니다"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+
+  dimensions = {
+    DBInstanceIdentifier = var.rds_instance_identifier
+  }
+
+  tags = {
+    Name = "${var.rds_instance_identifier}-rds-read-latency-high"
+  }
+}
+
+# RDS Write Latency
+resource "aws_cloudwatch_metric_alarm" "rds_write_latency_high" {
+  count               = var.rds_instance_identifier != "" ? 1 : 0
+  alarm_name          = "${var.rds_instance_identifier}-rds-write-latency-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 3
+  metric_name         = "WriteLatency"
+  namespace           = "AWS/RDS"
+  period              = 300
+  extended_statistic  = "p90"
+  threshold           = var.rds_latency_threshold
+  alarm_description   = "RDS Write Latency(p90)가 ${var.rds_latency_threshold}초를 초과했습니다"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+
+  dimensions = {
+    DBInstanceIdentifier = var.rds_instance_identifier
+  }
+
+  tags = {
+    Name = "${var.rds_instance_identifier}-rds-write-latency-high"
+  }
+}
+
+# RDS Freeable Memory Low
+resource "aws_cloudwatch_metric_alarm" "rds_memory_low" {
+  count               = var.rds_instance_identifier != "" ? 1 : 0
+  alarm_name          = "${var.rds_instance_identifier}-rds-memory-low"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "FreeableMemory"
+  namespace           = "AWS/RDS"
+  period              = 300
+  statistic           = "Average"
+  threshold           = var.rds_freeable_memory_threshold
+  alarm_description   = "RDS Freeable Memory가 ${var.rds_freeable_memory_threshold / 1024 / 1024}MB 미만입니다"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+
+  dimensions = {
+    DBInstanceIdentifier = var.rds_instance_identifier
+  }
+
+  tags = {
+    Name = "${var.rds_instance_identifier}-rds-memory-low"
   }
 }
 
@@ -1309,21 +1435,68 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
         }
       },
 
+      # Row 7.5: RDS Latency & Memory
+      {
+        type   = "metric"
+        x      = 0
+        y      = 37
+        width  = 6
+        height = 6
+        properties = {
+          title  = "RDS Read/Write Latency (p90)"
+          region = var.aws_region
+          metrics = [
+            ["AWS/RDS", "ReadLatency", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "p90", label = "Read p90" }],
+            ["AWS/RDS", "WriteLatency", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "p90", label = "Write p90", color = "#ff9900" }]
+          ]
+          period = 300
+          annotations = {
+            horizontal = [{
+              value = var.rds_latency_threshold
+              label = "Threshold (100ms)"
+              color = "#ff0000"
+            }]
+          }
+        }
+      },
+      {
+        type   = "metric"
+        x      = 6
+        y      = 37
+        width  = 6
+        height = 6
+        properties = {
+          title  = "RDS Freeable Memory"
+          region = var.aws_region
+          metrics = [
+            ["AWS/RDS", "FreeableMemory", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "Average" }]
+          ]
+          period = 300
+          annotations = {
+            horizontal = [{
+              value = var.rds_freeable_memory_threshold
+              label = "Threshold (25%)"
+              color = "#ff0000"
+            }]
+          }
+        }
+      },
+
       # Row 8: Route53 Health Check Metrics
       {
         type   = "text"
         x      = 0
-        y      = 37
+        y      = 43
         width  = 24
         height = 1
         properties = {
-          markdown = "## 🌍 Route53 Health Check & Failover Status"
+          markdown = "## Route53 Health Check & Failover Status"
         }
       },
       {
         type   = "metric"
         x      = 0
-        y      = 38
+        y      = 44
         width  = 8
         height = 6
         properties = {
@@ -1336,12 +1509,13 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
           yAxis = {
             left = { min = 0, max = 1 }
           }
+          view = "singleValue"
         }
       },
       {
         type   = "metric"
         x      = 8
-        y      = 38
+        y      = 44
         width  = 8
         height = 6
         properties = {
@@ -1354,12 +1528,13 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
           yAxis = {
             left = { min = 0, max = 1 }
           }
+          view = "singleValue"
         }
       },
       {
         type   = "metric"
         x      = 16
-        y      = 38
+        y      = 44
         width  = 8
         height = 6
         properties = {
@@ -1377,6 +1552,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
           yAxis = {
             left = { min = 0, max = 100 }
           }
+          view = "singleValue"
           annotations = {
             horizontal = [{
               value = 50
@@ -1391,17 +1567,17 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       {
         type   = "text"
         x      = 0
-        y      = 44
+        y      = 50
         width  = 24
         height = 1
         properties = {
-          markdown = "## 📦 Detailed Container Metrics"
+          markdown = "## Detailed Container Metrics"
         }
       },
       {
         type   = "metric"
         x      = 0
-        y      = 45
+        y      = 51
         width  = 6
         height = 6
         properties = {
@@ -1414,6 +1590,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
           yAxis = {
             left = { min = 0, max = 100 }
           }
+          view = "gauge"
           annotations = {
             horizontal = [{
               value = var.container_cpu_threshold
@@ -1426,7 +1603,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       {
         type   = "metric"
         x      = 6
-        y      = 45
+        y      = 51
         width  = 6
         height = 6
         properties = {
@@ -1439,6 +1616,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
           yAxis = {
             left = { min = 0, max = 100 }
           }
+          view = "gauge"
           annotations = {
             horizontal = [{
               value = var.container_memory_threshold
@@ -1451,7 +1629,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       {
         type   = "metric"
         x      = 12
-        y      = 45
+        y      = 51
         width  = 6
         height = 6
         properties = {
@@ -1467,7 +1645,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       {
         type   = "metric"
         x      = 18
-        y      = 45
+        y      = 51
         width  = 6
         height = 6
         properties = {
@@ -1485,17 +1663,17 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       {
         type   = "text"
         x      = 0
-        y      = 51
+        y      = 57
         width  = 24
         height = 1
         properties = {
-          markdown = "## 🚨 Alarm Status & Auto Recovery"
+          markdown = "## Alarm Status & Auto Recovery"
         }
       },
       {
         type   = "alarm"
         x      = 0
-        y      = 52
+        y      = 58
         width  = 12
         height = 4
         properties = {
@@ -1512,18 +1690,25 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       {
         type   = "alarm"
         x      = 12
-        y      = 52
+        y      = 58
         width  = 12
         height = 4
         properties = {
-          title  = "Application & Container Alarms"
-          alarms = [
-            aws_cloudwatch_metric_alarm.pod_cpu_high.arn,
-            aws_cloudwatch_metric_alarm.pod_memory_high.arn,
-            aws_cloudwatch_metric_alarm.pod_restart_high.arn,
-            aws_cloudwatch_metric_alarm.container_cpu_high.arn,
-            aws_cloudwatch_metric_alarm.container_memory_high.arn
-          ]
+          title  = "Application & Database Alarms"
+          alarms = concat(
+            [
+              aws_cloudwatch_metric_alarm.pod_cpu_high.arn,
+              aws_cloudwatch_metric_alarm.pod_memory_high.arn,
+              aws_cloudwatch_metric_alarm.pod_restart_high.arn,
+              aws_cloudwatch_metric_alarm.container_cpu_high.arn,
+              aws_cloudwatch_metric_alarm.container_memory_high.arn
+            ],
+            var.rds_instance_identifier != "" ? [
+              aws_cloudwatch_metric_alarm.rds_read_latency_high[0].arn,
+              aws_cloudwatch_metric_alarm.rds_write_latency_high[0].arn,
+              aws_cloudwatch_metric_alarm.rds_memory_low[0].arn
+            ] : []
+          )
         }
       }
     ]

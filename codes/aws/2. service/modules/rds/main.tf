@@ -90,6 +90,37 @@ resource "aws_db_parameter_group" "main" {
 }
 
 # =================================================
+# Enhanced Monitoring IAM Role
+# =================================================
+
+resource "aws_iam_role" "rds_enhanced_monitoring" {
+  count = var.enhanced_monitoring_enabled ? 1 : 0
+  name  = "${var.environment}-rds-enhanced-monitoring-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "monitoring.rds.amazonaws.com"
+      }
+    }]
+  })
+
+  tags = {
+    Name        = "${var.environment}-rds-enhanced-monitoring-role"
+    Environment = var.environment
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "rds_enhanced_monitoring" {
+  count      = var.enhanced_monitoring_enabled ? 1 : 0
+  role       = aws_iam_role.rds_enhanced_monitoring[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+}
+
+# =================================================
 # RDS 인스턴스
 # =================================================
 
@@ -119,6 +150,10 @@ resource "aws_db_instance" "main" {
   backup_window          = "03:00-04:00"
   maintenance_window     = "mon:04:00-mon:05:00"
 
+  # Enhanced Monitoring
+  monitoring_interval = var.enhanced_monitoring_enabled ? var.monitoring_interval : 0
+  monitoring_role_arn = var.enhanced_monitoring_enabled ? aws_iam_role.rds_enhanced_monitoring[0].arn : null
+
   enabled_cloudwatch_logs_exports = ["error", "general", "slowquery"]
 
   skip_final_snapshot       = var.skip_final_snapshot
@@ -130,4 +165,6 @@ resource "aws_db_instance" "main" {
     Name        = "${var.environment}-rds"
     Environment = var.environment
   }
+
+  depends_on = [aws_iam_role_policy_attachment.rds_enhanced_monitoring]
 }

@@ -72,3 +72,15 @@ variable "deletion_protection" {
   type        = bool
   default     = true
 }
+
+variable "enhanced_monitoring_enabled" {
+  description = "Enhanced Monitoring 활성화 여부"
+  type        = bool
+  default     = false
+}
+
+variable "monitoring_interval" {
+  description = "Enhanced Monitoring 수집 간격 (초) - 0, 1, 5, 10, 15, 30, 60 중 선택"
+  type        = number
+  default     = 60
+}

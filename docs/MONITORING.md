@@ -22,7 +22,7 @@ AWS CloudWatch와 Container Insights를 활용하여 프로젝트에서 구축�
 
 ### 핵심 기능
 - **다층 모니터링**: 인프라(Node) → 컨테이너(Pod) → 애플리케이션(ALB/RDS) 계층별 모니터링
-- **실시간 알람**: SNS를 통한 이메일 알림
+- **실시간 알람**: AWS Chatbot을 통한 Slack 알림
 - **자동 복구**: Lambda를 통한 자동 복구 액션
 - **시각화**: CloudWatch 대시보드를 통한 실시간 메트릭 확인
 
@@ -53,11 +53,11 @@ AWS CloudWatch와 Container Insights를 활용하여 프로젝트에서 구축�
             │     SNS Topic         │
             └───────┬───────┬───────┘
                     ↓       ↓
-            ┌───────┐   ┌───────────┐
-            │ Email │   │  Lambda   │
-            │ Alert │   │   Auto    │
-            │       │   │ Recovery  │
-            └───────┘   └───────────┘
+          ┌──────────────┐  ┌───────────┐
+          │ AWS Chatbot  │  │  Lambda   │
+          │   (Slack)    │  │   Auto    │
+          │              │  │ Recovery  │
+          └──────────────┘  └───────────┘
 ```
 
 ---
@@ -307,6 +307,30 @@ AWS CloudWatch와 Container Insights를 활용하여 프로젝트에서 구축�
   - 대량의 쓰기 작업으로 인한 대기 큐 증가
   - 스토리지 타입 업그레이드 고려 (gp2 → gp3 → io1)
 
+#### 4.5 Read/Write Latency (ReadLatency / WriteLatency)
+- **네임스페이스**: `AWS/RDS`
+- **임계값**: 0.1초 (100ms, 기본값)
+- **평가 주기**: 5분 (300초)
+- **평가 횟수**: 3회 연속
+- **통계**: p90 (90th percentile)
+- **모니터링 이유**:
+  - 데이터베이스 응답 지연 감지
+  - 슬로우 쿼리 또는 인덱스 문제 조기 발견
+  - 스토리지 성능 저하 감지
+  - 애플리케이션 성능에 직접적 영향
+
+#### 4.6 Freeable Memory (FreeableMemory)
+- **네임스페이스**: `AWS/RDS`
+- **임계값**: 256MB (기본값)
+- **평가 주기**: 5분 (300초)
+- **평가 횟수**: 2회 연속
+- **통계**: Average
+- **모니터링 이유**:
+  - 메모리 부족으로 인한 스왑 사용 방지
+  - 쿼리 캐시 효율성 저하 감지
+  - 인스턴스 타입 업그레이드 필요성 판단
+  - OOM(Out of Memory) 상황 예방
+
 ---
 
 ### 5. Route53 Health Check 메트릭
@@ -359,16 +383,39 @@ CloudWatch Alarm 발생
        ↓
    ┌───┴───┐
    ↓       ↓
-Email   Lambda
+Slack   Lambda
 Alert    Auto
-        Recovery
+(AWS    Recovery
+Chatbot)
 ```
 
 ### SNS 토픽 구성
 - **토픽 이름**: `{environment}-eks-monitoring-alerts`
 - **구독자**:
-  1. 이메일 알림 (운영자)
+  1. AWS Chatbot (Slack 알림)
   2. Lambda 자동 복구 함수
+
+### Slack 알림 설정
+
+AWS Chatbot을 통해 Slack 채널로 알람을 전송합니다.
+
+**설정 방법**:
+1. AWS Console → AWS Chatbot 이동
+2. "Configure new client" 클릭 후 Slack Workspace 연동
+3. Slack에서 AWS Chatbot 앱 승인
+4. `terraform.tfvars`에 Workspace ID와 Channel ID 설정:
+   ```hcl
+   slack_workspace_id = "T0XXXXXXXXX"  # Slack Workspace ID
+   slack_channel_id   = "C0XXXXXXXXX"  # 알림받을 채널 ID
+   ```
+
+**Slack 알림 예시**:
+```
+🚨 ALARM: eks-dev-node-cpu-high
+EKS 노드 CPU 사용률이 80%를 초과했습니다
+Region: ap-northeast-2
+Timestamp: 2024-01-15T10:30:00Z
+```
 
 ### 알람 중요도 분류
 
@@ -480,6 +527,8 @@ Lambda 함수는 다음 권한을 가집니다:
 - Free Storage Space (임계값 표시)
 - Database Connections (임계값 표시)
 - Disk Queue Depth (임계값 표시)
+- Read/Write Latency p90 (임계값 표시)
+- Freeable Memory (임계값 표시)
 
 #### 5. Route53 Health Check & Failover Status
 - Primary (AWS) Health Check Status
@@ -488,7 +537,7 @@ Lambda 함수는 다음 권한을 가집니다:
 
 #### 6. Alarm Status & Auto Recovery
 - Infrastructure Alarms (노드/EC2 관련 알람 상태)
-- Application & Container Alarms (Pod/컨테이너 관련 알람 상태)
+- Application & Database Alarms (Pod/컨테이너/RDS 관련 알람 상태)
 
 ### 대시보드 접근 방법
 1. AWS Console → CloudWatch 이동
@@ -532,7 +581,7 @@ Lambda 함수는 다음 권한을 가집니다:
    - Primary/Secondary 모두 Healthy 상태 확인
    - HealthCheckPercentageHealthy가 100%인지 확인
 
-3. 알람 이메일 확인
+3. Slack 알람 채널 확인
    - 야간 또는 주말에 발생한 알람 검토
    - 자동 복구 성공 여부 확인
 
