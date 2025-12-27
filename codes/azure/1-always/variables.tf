@@ -51,28 +51,28 @@ variable "vnet_cidr" {
   default     = "172.16.0.0/16"
 }
 
+variable "appgw_subnet_cidr" {
+  description = "Application Gateway Subnet CIDR"
+  type        = string
+  default     = "172.16.1.0/24"
+}
+
 variable "web_subnet_cidr" {
-  description = "Web Subnet CIDR"
+  description = "Web Pod Subnet CIDR (AKS Web 노드풀용)"
   type        = string
   default     = "172.16.11.0/24"
 }
 
 variable "was_subnet_cidr" {
-  description = "WAS Subnet CIDR"
+  description = "WAS Pod Subnet CIDR (AKS WAS 노드풀용)"
   type        = string
   default     = "172.16.21.0/24"
 }
 
 variable "db_subnet_cidr" {
-  description = "DB Subnet CIDR"
+  description = "DB Subnet CIDR (MySQL Flexible Server용)"
   type        = string
   default     = "172.16.31.0/24"
-}
-
-variable "aks_subnet_cidr" {
-  description = "AKS Subnet CIDR"
-  type        = string
-  default     = "172.16.41.0/24"
 }
 
 variable "subscription_id" {

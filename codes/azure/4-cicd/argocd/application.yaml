@@ -1,0 +1,177 @@
+# ArgoCD Application for Azure AKS PetClinic
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: petclinic
+  namespace: argocd
+spec:
+  description: "PetClinic Application Project for Azure"
+
+  sourceRepos:
+    - 'https://github.com/your-org/petclinic-gitops.git'
+    - 'https://github.com/your-org/spring-petclinic.git'
+
+  destinations:
+    - namespace: petclinic
+      server: https://kubernetes.default.svc
+    - namespace: petclinic-staging
+      server: https://kubernetes.default.svc
+
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRole
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRoleBinding
+
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+
+  orphanedResources:
+    warn: true
+
+  roles:
+    - name: developer
+      policies:
+        - p, proj:petclinic:developer, applications, get, petclinic/*, allow
+        - p, proj:petclinic:developer, applications, sync, petclinic/*, allow
+      groups:
+        - Developers
+
+    - name: admin
+      policies:
+        - p, proj:petclinic:admin, applications, *, petclinic/*, allow
+      groups:
+        - DevOps-Team
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: petclinic-azure
+  namespace: argocd
+  labels:
+    app: petclinic
+    environment: production
+    cloud: azure
+  annotations:
+    notifications.argoproj.io/subscribe.on-deployed.slack: deployments
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: deployments
+    notifications.argoproj.io/subscribe.on-deployed.teams: deployments
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: petclinic
+
+  source:
+    repoURL: https://github.com/your-org/petclinic-gitops.git
+    targetRevision: main
+    path: overlays/azure-prod
+
+    kustomize:
+      images:
+        - bloberryacr.azurecr.io/petclinic:latest
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: petclinic
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+      - Validate=true
+
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+
+  revisionHistoryLimit: 10
+
+---
+# Azure 환경용 Kustomize Overlay
+# overlays/azure-prod/kustomization.yaml 내용
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: petclinic
+
+resources:
+  - ../../base
+
+commonLabels:
+  environment: production
+  cloud: azure
+
+images:
+  - name: petclinic
+    newName: bloberryacr.azurecr.io/petclinic
+    newTag: latest
+
+patches:
+  - path: patches/deployment-patch.yaml
+  - path: patches/ingress-azure-patch.yaml
+
+configMapGenerator:
+  - name: petclinic-config
+    behavior: merge
+    literals:
+      - spring.profiles.active=prod,mysql
+
+secretGenerator:
+  - name: petclinic-db-secret
+    type: Opaque
+    literals:
+      - url=jdbc:mysql://bloberry-mysql.mysql.database.azure.com:3306/petclinic?useSSL=true
+
+replicas:
+  - name: petclinic
+    count: 3
+
+---
+# overlays/azure-prod/patches/ingress-azure-patch.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: petclinic
+  annotations:
+    kubernetes.io/ingress.class: azure/application-gateway
+    appgw.ingress.kubernetes.io/ssl-redirect: "true"
+    appgw.ingress.kubernetes.io/backend-protocol: "http"
+    appgw.ingress.kubernetes.io/health-probe-path: "/actuator/health"
+    appgw.ingress.kubernetes.io/connection-draining: "true"
+    appgw.ingress.kubernetes.io/connection-draining-timeout: "30"
+spec:
+  tls:
+    - hosts:
+        - petclinic.bloberry.cloud
+      secretName: petclinic-tls
+  rules:
+    - host: petclinic.bloberry.cloud
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: petclinic
+                port:
+                  number: 80

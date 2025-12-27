@@ -1,0 +1,195 @@
+# ArgoCD Application for AWS EKS PetClinic
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: petclinic
+  namespace: argocd
+spec:
+  description: "PetClinic Application Project"
+
+  # 소스 레포지토리 허용 목록
+  sourceRepos:
+    - 'https://github.com/your-org/petclinic-gitops.git'
+    - 'https://github.com/your-org/spring-petclinic.git'
+
+  # 배포 대상 클러스터 및 네임스페이스
+  destinations:
+    - namespace: petclinic
+      server: https://kubernetes.default.svc
+    - namespace: petclinic-staging
+      server: https://kubernetes.default.svc
+
+  # 클러스터 리소스 허용 목록
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRole
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRoleBinding
+
+  # 네임스페이스 리소스 허용 목록
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+
+  # Orphaned 리소스 모니터링
+  orphanedResources:
+    warn: true
+
+  # 역할 정의
+  roles:
+    - name: developer
+      description: Developer role with read access
+      policies:
+        - p, proj:petclinic:developer, applications, get, petclinic/*, allow
+        - p, proj:petclinic:developer, applications, sync, petclinic/*, allow
+      groups:
+        - your-org:developers
+
+    - name: admin
+      description: Admin role with full access
+      policies:
+        - p, proj:petclinic:admin, applications, *, petclinic/*, allow
+        - p, proj:petclinic:admin, repositories, *, petclinic/*, allow
+      groups:
+        - your-org:devops-team
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: petclinic-aws
+  namespace: argocd
+  labels:
+    app: petclinic
+    environment: production
+    cloud: aws
+  annotations:
+    notifications.argoproj.io/subscribe.on-deployed.slack: deployments
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: deployments
+    notifications.argoproj.io/subscribe.on-health-degraded.slack: deployments
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: petclinic
+
+  source:
+    repoURL: https://github.com/your-org/petclinic-gitops.git
+    targetRevision: main
+    path: overlays/aws-prod
+
+    # Kustomize 설정
+    kustomize:
+      images:
+        - ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/petclinic:latest
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: petclinic
+
+  # 동기화 정책
+  syncPolicy:
+    automated:
+      prune: true           # 불필요한 리소스 자동 삭제
+      selfHeal: true        # 드리프트 자동 수정
+      allowEmpty: false     # 빈 리소스 방지
+
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+      - Validate=true
+      - RespectIgnoreDifferences=true
+
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # 리소스 무시 규칙
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas   # HPA 관리
+
+  # 헬스 체크 설정
+  revisionHistoryLimit: 10
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: petclinic-aws-staging
+  namespace: argocd
+  labels:
+    app: petclinic
+    environment: staging
+    cloud: aws
+spec:
+  project: petclinic
+
+  source:
+    repoURL: https://github.com/your-org/petclinic-gitops.git
+    targetRevision: develop
+    path: overlays/aws-staging
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: petclinic-staging
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+
+    syncOptions:
+      - CreateNamespace=true
+
+---
+# ApplicationSet을 사용한 멀티 환경 배포
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: petclinic-envs
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - env: dev
+            namespace: petclinic-dev
+            branch: develop
+            autoSync: true
+          - env: staging
+            namespace: petclinic-staging
+            branch: staging
+            autoSync: true
+          - env: prod
+            namespace: petclinic
+            branch: main
+            autoSync: false  # Production은 수동 승인
+
+  template:
+    metadata:
+      name: 'petclinic-{{env}}'
+      namespace: argocd
+    spec:
+      project: petclinic
+      source:
+        repoURL: https://github.com/your-org/petclinic-gitops.git
+        targetRevision: '{{branch}}'
+        path: 'overlays/aws-{{env}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{namespace}}'
+      syncPolicy:
+        automated:
+          prune: '{{autoSync}}'
+          selfHeal: '{{autoSync}}'
+        syncOptions:
+          - CreateNamespace=true

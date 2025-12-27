@@ -75,28 +75,48 @@ variable "kubernetes_version" {
   default     = "1.28"
 }
 
-variable "node_count" {
-  description = "AKS 노드 수"
-  type        = number
-  default     = 2
-}
-
-variable "node_min_count" {
-  description = "최소 노드 수 (Auto Scaling)"
-  type        = number
-  default     = 2
-}
-
-variable "node_max_count" {
-  description = "최대 노드 수 (Auto Scaling)"
-  type        = number
-  default     = 5
-}
-
 variable "node_vm_size" {
   description = "노드 VM 크기"
   type        = string
   default     = "Standard_D2s_v3"
+}
+
+# Web 노드풀 설정 (가용영역 1, 2에 분산)
+variable "web_node_count" {
+  description = "Web 노드풀 노드 수"
+  type        = number
+  default     = 2
+}
+
+variable "web_node_min_count" {
+  description = "Web 노드풀 최소 노드 수 (Auto Scaling)"
+  type        = number
+  default     = 2
+}
+
+variable "web_node_max_count" {
+  description = "Web 노드풀 최대 노드 수 (Auto Scaling)"
+  type        = number
+  default     = 5
+}
+
+# WAS 노드풀 설정 (가용영역 1, 2에 분산)
+variable "was_node_count" {
+  description = "WAS 노드풀 노드 수"
+  type        = number
+  default     = 2
+}
+
+variable "was_node_min_count" {
+  description = "WAS 노드풀 최소 노드 수 (Auto Scaling)"
+  type        = number
+  default     = 2
+}
+
+variable "was_node_max_count" {
+  description = "WAS 노드풀 최대 노드 수 (Auto Scaling)"
+  type        = number
+  default     = 5
 }
 
 variable "tags" {

@@ -1,0 +1,287 @@
+# GitOps Repository Structure
+# petclinic-gitops/
+#
+# ├── base/
+# │   ├── kustomization.yaml
+# │   ├── namespace.yaml
+# │   ├── deployment.yaml
+# │   ├── service.yaml
+# │   ├── ingress.yaml
+# │   ├── configmap.yaml
+# │   ├── secret.yaml (sealed-secrets 사용)
+# │   └── hpa.yaml
+# │
+# ├── overlays/
+# │   ├── aws-dev/
+# │   │   ├── kustomization.yaml
+# │   │   └── patches/
+# │   ├── aws-staging/
+# │   │   ├── kustomization.yaml
+# │   │   └── patches/
+# │   ├── aws-prod/
+# │   │   ├── kustomization.yaml
+# │   │   └── patches/
+# │   ├── azure-dev/
+# │   │   ├── kustomization.yaml
+# │   │   └── patches/
+# │   └── azure-prod/
+# │       ├── kustomization.yaml
+# │       └── patches/
+# │
+# └── charts/
+#     └── petclinic/
+#         ├── Chart.yaml
+#         ├── values.yaml
+#         └── templates/
+
+---
+# base/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: petclinic-base
+
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - configmap.yaml
+  - hpa.yaml
+
+commonLabels:
+  app: petclinic
+  managed-by: argocd
+
+---
+# base/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: petclinic
+  labels:
+    app: petclinic
+
+---
+# base/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: petclinic
+  namespace: petclinic
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: petclinic
+  template:
+    metadata:
+      labels:
+        app: petclinic
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      serviceAccountName: petclinic
+      containers:
+        - name: petclinic
+          image: petclinic:latest  # kustomize로 오버라이드
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              valueFrom:
+                configMapKeyRef:
+                  name: petclinic-config
+                  key: spring.profiles.active
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: petclinic-db-secret
+                  key: url
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: petclinic-db-secret
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: petclinic-db-secret
+                  key: password
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 5
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: petclinic
+                topologyKey: kubernetes.io/hostname
+
+---
+# base/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: petclinic
+  namespace: petclinic
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: petclinic
+
+---
+# base/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: petclinic
+  namespace: petclinic
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: petclinic
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# overlays/aws-prod/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: petclinic
+
+resources:
+  - ../../base
+
+namePrefix: ""
+nameSuffix: ""
+
+commonLabels:
+  environment: production
+  cloud: aws
+
+images:
+  - name: petclinic
+    newName: ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/petclinic
+    newTag: latest
+
+patches:
+  - path: patches/deployment-patch.yaml
+  - path: patches/ingress-patch.yaml
+
+configMapGenerator:
+  - name: petclinic-config
+    behavior: merge
+    literals:
+      - spring.profiles.active=prod,mysql
+
+secretGenerator:
+  - name: petclinic-db-secret
+    type: Opaque
+    literals:
+      - url=jdbc:mysql://petclinic-db.cluster-xxx.ap-northeast-2.rds.amazonaws.com:3306/petclinic
+    # username, password는 sealed-secrets로 관리
+
+replicas:
+  - name: petclinic
+    count: 3
+
+---
+# overlays/aws-prod/patches/deployment-patch.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: petclinic
+spec:
+  template:
+    spec:
+      nodeSelector:
+        tier: was
+      tolerations:
+        - key: "tier"
+          operator: "Equal"
+          value: "was"
+          effect: "NoSchedule"
+      containers:
+        - name: petclinic
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+
+---
+# overlays/aws-prod/patches/ingress-patch.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: petclinic
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-northeast-2:ACCOUNT_ID:certificate/CERT_ID
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
+spec:
+  rules:
+    - host: petclinic.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: petclinic
+                port:
+                  number: 80

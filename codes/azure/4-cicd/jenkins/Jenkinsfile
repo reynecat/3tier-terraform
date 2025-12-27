@@ -1,0 +1,294 @@
+// Azure CI/CD Pipeline - Jenkinsfile
+// Jenkins + ArgoCD를 활용한 GitOps 기반 CI/CD (Azure AKS)
+
+pipeline {
+    agent {
+        kubernetes {
+            yaml '''
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    jenkins: agent
+spec:
+  serviceAccountName: jenkins
+  containers:
+  - name: docker
+    image: docker:24-dind
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - name: docker-socket
+      mountPath: /var/run/docker.sock
+  - name: kubectl
+    image: bitnami/kubectl:latest
+    command:
+    - cat
+    tty: true
+  - name: maven
+    image: maven:3.9-eclipse-temurin-17
+    command:
+    - cat
+    tty: true
+    volumeMounts:
+    - name: maven-cache
+      mountPath: /root/.m2
+  - name: azure-cli
+    image: mcr.microsoft.com/azure-cli:latest
+    command:
+    - cat
+    tty: true
+  volumes:
+  - name: docker-socket
+    hostPath:
+      path: /var/run/docker.sock
+  - name: maven-cache
+    persistentVolumeClaim:
+      claimName: maven-cache-pvc
+'''
+        }
+    }
+
+    environment {
+        // Azure ACR 설정
+        AZURE_SUBSCRIPTION_ID = credentials('azure-subscription-id')
+        ACR_NAME = 'bloberryacr'
+        ACR_REGISTRY = "${ACR_NAME}.azurecr.io"
+        ACR_REPOSITORY = 'petclinic'
+
+        // Azure 리소스 그룹
+        RESOURCE_GROUP = 'bloberry-rg'
+        AKS_CLUSTER_NAME = 'bloberry-aks'
+
+        // Git 설정
+        GIT_REPO = 'https://github.com/your-org/spring-petclinic.git'
+        GITOPS_REPO = 'https://github.com/your-org/petclinic-gitops.git'
+
+        // 버전 태그
+        IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'latest'}"
+
+        // SonarQube
+        SONAR_HOST_URL = 'http://sonarqube:9000'
+    }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.GIT_COMMIT = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                    env.GIT_BRANCH = sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
+                }
+            }
+        }
+
+        stage('Build & Test') {
+            steps {
+                container('maven') {
+                    sh '''
+                        mvn clean package -DskipTests=false
+                        mvn test
+                    '''
+                }
+            }
+            post {
+                always {
+                    junit '**/target/surefire-reports/*.xml'
+                    jacoco execPattern: '**/target/jacoco.exec'
+                }
+            }
+        }
+
+        stage('Code Quality Analysis') {
+            steps {
+                container('maven') {
+                    withSonarQubeEnv('SonarQube') {
+                        sh '''
+                            mvn sonar:sonar \
+                                -Dsonar.projectKey=petclinic-azure \
+                                -Dsonar.host.url=${SONAR_HOST_URL}
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Azure Login') {
+            steps {
+                container('azure-cli') {
+                    withCredentials([azureServicePrincipal('azure-service-principal')]) {
+                        sh '''
+                            az login --service-principal \
+                                -u $AZURE_CLIENT_ID \
+                                -p $AZURE_CLIENT_SECRET \
+                                --tenant $AZURE_TENANT_ID
+
+                            az account set --subscription $AZURE_SUBSCRIPTION_ID
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                container('docker') {
+                    script {
+                        // ACR 로그인
+                        sh '''
+                            az acr login --name ${ACR_NAME}
+                        '''
+
+                        // Docker 이미지 빌드
+                        sh """
+                            docker build -t ${ACR_REGISTRY}/${ACR_REPOSITORY}:${IMAGE_TAG} .
+                            docker tag ${ACR_REGISTRY}/${ACR_REPOSITORY}:${IMAGE_TAG} \
+                                       ${ACR_REGISTRY}/${ACR_REPOSITORY}:latest
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Security Scan') {
+            parallel {
+                stage('Trivy Scan') {
+                    steps {
+                        container('docker') {
+                            sh """
+                                docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                                    aquasec/trivy:latest image \
+                                    --severity HIGH,CRITICAL \
+                                    --exit-code 0 \
+                                    ${ACR_REGISTRY}/${ACR_REPOSITORY}:${IMAGE_TAG}
+                            """
+                        }
+                    }
+                }
+                stage('OWASP Dependency Check') {
+                    steps {
+                        container('maven') {
+                            sh 'mvn org.owasp:dependency-check-maven:check'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Push to ACR') {
+            steps {
+                container('docker') {
+                    sh """
+                        docker push ${ACR_REGISTRY}/${ACR_REPOSITORY}:${IMAGE_TAG}
+                        docker push ${ACR_REGISTRY}/${ACR_REPOSITORY}:latest
+                    """
+                }
+            }
+        }
+
+        stage('Update GitOps Repository') {
+            steps {
+                container('kubectl') {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'github-credentials',
+                        usernameVariable: 'GIT_USERNAME',
+                        passwordVariable: 'GIT_PASSWORD'
+                    )]) {
+                        sh """
+                            # GitOps 레포지토리 클론
+                            git clone https://\${GIT_USERNAME}:\${GIT_PASSWORD}@github.com/your-org/petclinic-gitops.git
+                            cd petclinic-gitops
+
+                            # 이미지 태그 업데이트 (kustomize 사용)
+                            cd overlays/azure-prod
+                            kustomize edit set image ${ACR_REGISTRY}/${ACR_REPOSITORY}:${IMAGE_TAG}
+
+                            # 변경사항 커밋 및 푸시
+                            git config user.email "jenkins@example.com"
+                            git config user.name "Jenkins CI"
+                            git add .
+                            git commit -m "Update Azure image tag to ${IMAGE_TAG}"
+                            git push origin main
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Sync ArgoCD Application') {
+            steps {
+                container('kubectl') {
+                    withCredentials([string(credentialsId: 'argocd-token', variable: 'ARGOCD_TOKEN')]) {
+                        sh '''
+                            # ArgoCD CLI를 사용하여 동기화
+                            argocd app sync petclinic-azure \
+                                --server argocd-server.argocd.svc.cluster.local \
+                                --auth-token ${ARGOCD_TOKEN} \
+                                --grpc-web
+
+                            # 동기화 완료 대기
+                            argocd app wait petclinic-azure \
+                                --server argocd-server.argocd.svc.cluster.local \
+                                --auth-token ${ARGOCD_TOKEN} \
+                                --grpc-web \
+                                --timeout 300
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                container('azure-cli') {
+                    sh '''
+                        # AKS 자격 증명 가져오기
+                        az aks get-credentials --resource-group ${RESOURCE_GROUP} \
+                            --name ${AKS_CLUSTER_NAME} --overwrite-existing
+
+                        # 배포 상태 확인
+                        kubectl rollout status deployment/petclinic -n petclinic --timeout=300s
+
+                        # 헬스 체크
+                        ENDPOINT=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                        curl -f http://${ENDPOINT}/actuator/health || exit 1
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            slackSend(
+                channel: '#deployments',
+                color: 'good',
+                message: "✅ Azure 배포 성공: ${env.JOB_NAME} #${env.BUILD_NUMBER}\nImage: ${ACR_REGISTRY}/${ACR_REPOSITORY}:${IMAGE_TAG}"
+            )
+        }
+        failure {
+            slackSend(
+                channel: '#deployments',
+                color: 'danger',
+                message: "❌ Azure 배포 실패: ${env.JOB_NAME} #${env.BUILD_NUMBER}\n${env.BUILD_URL}"
+            )
+        }
+        always {
+            cleanWs()
+        }
+    }
+}

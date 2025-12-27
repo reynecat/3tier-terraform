@@ -6,6 +6,44 @@ terraform {
 }
 
 # =================================================
+# EKS 삭제 전 Kubernetes 생성 AWS 리소스 정리
+# =================================================
+# AWS Load Balancer Controller가 생성한 ALB/NLB, Target Group 등을
+# EKS 클러스터 삭제 전에 먼저 정리합니다.
+
+resource "null_resource" "cleanup_k8s_resources" {
+  triggers = {
+    cluster_name = "${var.environment}-eks"
+    vpc_id       = var.vpc_id
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = <<-EOT
+      echo "Cleaning up Kubernetes-created AWS resources..."
+
+      # VPC 내 ALB/NLB 삭제
+      for lb_arn in $(aws elbv2 describe-load-balancers --query "LoadBalancers[?VpcId=='${self.triggers.vpc_id}'].LoadBalancerArn" --output text 2>/dev/null); do
+        echo "Deleting Load Balancer: $lb_arn"
+        aws elbv2 delete-load-balancer --load-balancer-arn "$lb_arn" 2>/dev/null || true
+      done
+
+      # ALB 삭제 완료 대기 (최대 5분)
+      echo "Waiting for Load Balancers to be deleted..."
+      sleep 30
+
+      # VPC 내 Target Group 삭제
+      for tg_arn in $(aws elbv2 describe-target-groups --query "TargetGroups[?VpcId=='${self.triggers.vpc_id}'].TargetGroupArn" --output text 2>/dev/null); do
+        echo "Deleting Target Group: $tg_arn"
+        aws elbv2 delete-target-group --target-group-arn "$tg_arn" 2>/dev/null || true
+      done
+
+      echo "Cleanup completed."
+    EOT
+  }
+}
+
+# =================================================
 # EKS 클러스터 IAM Role
 # =================================================
 

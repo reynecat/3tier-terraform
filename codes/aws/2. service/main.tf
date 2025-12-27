@@ -54,22 +54,23 @@ module "vpc" {
 
 module "eks" {
   source = "./modules/eks"
-  
+
   environment         = var.environment
+  vpc_id              = module.vpc.vpc_id
   web_subnet_ids      = module.vpc.web_subnet_ids
   was_subnet_ids      = module.vpc.was_subnet_ids
   node_instance_type  = var.eks_node_instance_type
-  
+
   # Web Tier 노드 그룹 설정
   web_desired_size = var.eks_web_desired_size
   web_min_size     = var.eks_web_min_size
   web_max_size     = var.eks_web_max_size
-  
+
   # WAS Tier 노드 그룹 설정
   was_desired_size = var.eks_was_desired_size
   was_min_size     = var.eks_was_min_size
   was_max_size     = var.eks_was_max_size
-  
+
   depends_on = [module.vpc]
 }
 

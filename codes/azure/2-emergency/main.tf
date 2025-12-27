@@ -31,14 +31,30 @@ data "azurerm_virtual_network" "main" {
   resource_group_name = var.resource_group_name
 }
 
-data "azurerm_subnet" "db" {
-  name                 = "snet-db"
+# Subnet 1: Application Gateway 전용 서브넷
+data "azurerm_subnet" "appgw" {
+  name                 = "snet-appgw"
   virtual_network_name = var.vnet_name
   resource_group_name  = var.resource_group_name
 }
 
-data "azurerm_subnet" "aks" {
-  name                 = "snet-aks"
+# Subnet 2: Web Pod 서브넷 (AKS Web 노드풀용)
+data "azurerm_subnet" "web" {
+  name                 = "snet-web"
+  virtual_network_name = var.vnet_name
+  resource_group_name  = var.resource_group_name
+}
+
+# Subnet 3: WAS Pod 서브넷 (AKS WAS 노드풀용)
+data "azurerm_subnet" "was" {
+  name                 = "snet-was"
+  virtual_network_name = var.vnet_name
+  resource_group_name  = var.resource_group_name
+}
+
+# Subnet 4: DB 서브넷 (MySQL Flexible Server용)
+data "azurerm_subnet" "db" {
+  name                 = "snet-db"
   virtual_network_name = var.vnet_name
   resource_group_name  = var.resource_group_name
 }
@@ -49,7 +65,7 @@ data "azurerm_storage_account" "backups" {
 }
 
 # =================================================
-# MySQL Flexible Server (백업 복구용)
+# MySQL Flexible Server (백업 복구용) - Zone Redundant HA
 # =================================================
 
 resource "azurerm_mysql_flexible_server" "main" {
@@ -59,20 +75,22 @@ resource "azurerm_mysql_flexible_server" "main" {
   administrator_login    = var.db_username
   administrator_password = var.db_password
 
-  sku_name   = var.mysql_sku
-  version    = "8.0.21"
+  sku_name = var.mysql_sku
+  version  = "8.0.21"
 
   backup_retention_days        = 7
   geo_redundant_backup_enabled = false
 
-  #delegated_subnet_id = data.azurerm_subnet.db.id
+  # Zone-Redundant 고가용성 설정
+  zone = "1"
+
+  high_availability {
+    mode                      = "ZoneRedundant"
+    standby_availability_zone = "2"
+  }
 
   storage {
     size_gb = var.mysql_storage_gb
-  }
-
-  lifecycle {
-    ignore_changes = [zone]
   }
 
   tags = var.tags
@@ -87,7 +105,7 @@ resource "azurerm_mysql_flexible_database" "main" {
 }
 
 # =================================================
-# AKS Cluster
+# AKS Cluster - 가용영역 2개 (Zone 1, 2) 사용
 # =================================================
 
 resource "azurerm_kubernetes_cluster" "main" {
@@ -98,14 +116,20 @@ resource "azurerm_kubernetes_cluster" "main" {
 
   kubernetes_version = var.kubernetes_version
 
+  # Web 노드풀 (default_node_pool) - 가용영역 1, 2에 분산
   default_node_pool {
-    name                = "default"
-    node_count          = var.node_count
+    name                = "web"
+    node_count          = var.web_node_count
     vm_size             = var.node_vm_size
-    vnet_subnet_id      = data.azurerm_subnet.aks.id
+    vnet_subnet_id      = data.azurerm_subnet.web.id
+    zones               = ["1", "2"]
     enable_auto_scaling = true
-    min_count           = var.node_min_count
-    max_count           = var.node_max_count
+    min_count           = var.web_node_min_count
+    max_count           = var.web_node_max_count
+
+    node_labels = {
+      "tier" = "web"
+    }
 
     upgrade_settings {
       max_surge = "10%"
@@ -130,6 +154,32 @@ resource "azurerm_kubernetes_cluster" "main" {
 }
 
 # =================================================
+# WAS 노드풀 - 가용영역 1, 2에 분산
+# =================================================
+
+resource "azurerm_kubernetes_cluster_node_pool" "was" {
+  name                  = "was"
+  kubernetes_cluster_id = azurerm_kubernetes_cluster.main.id
+  vm_size               = var.node_vm_size
+  node_count            = var.was_node_count
+  vnet_subnet_id        = data.azurerm_subnet.was.id
+  zones                 = ["1", "2"]
+  enable_auto_scaling   = true
+  min_count             = var.was_node_min_count
+  max_count             = var.was_node_max_count
+
+  node_labels = {
+    "tier" = "was"
+  }
+
+  upgrade_settings {
+    max_surge = "10%"
+  }
+
+  tags = var.tags
+}
+
+# =================================================
 # Role Assignments (AKS → VNet)
 # =================================================
 
@@ -146,23 +196,17 @@ resource "azurerm_role_assignment" "aks_rg_contributor" {
 }
 
 # =================================================
-# Application Gateway (Route53 Secondary Endpoint)
+# Application Gateway (Route53 Secondary Endpoint) - Zone Redundant
 # =================================================
 
-# Data Source - Web Subnet for App Gateway
-data "azurerm_subnet" "web" {
-  name                 = "snet-web"
-  virtual_network_name = var.vnet_name
-  resource_group_name  = var.resource_group_name
-}
-
-# Public IP for Application Gateway
+# Public IP for Application Gateway - Zone Redundant
 resource "azurerm_public_ip" "appgw" {
   name                = "pip-appgw-${var.environment}"
   location            = data.azurerm_resource_group.main.location
   resource_group_name = data.azurerm_resource_group.main.name
   allocation_method   = "Static"
   sku                 = "Standard"
+  zones               = ["1", "2"]
 
   tags = var.tags
 }
@@ -178,11 +222,12 @@ locals {
   probe_name                     = "health-probe"
 }
 
-# Application Gateway
+# Application Gateway - Zone Redundant (가용영역 1, 2에 배포)
 resource "azurerm_application_gateway" "main" {
   name                = "appgw-${var.environment}"
   location            = data.azurerm_resource_group.main.location
   resource_group_name = data.azurerm_resource_group.main.name
+  zones               = ["1", "2"]
 
   sku {
     name     = "Standard_v2"
@@ -192,7 +237,7 @@ resource "azurerm_application_gateway" "main" {
 
   gateway_ip_configuration {
     name      = "appgw-ip-config"
-    subnet_id = data.azurerm_subnet.web.id
+    subnet_id = data.azurerm_subnet.appgw.id
   }
 
   # Frontend IP Configuration

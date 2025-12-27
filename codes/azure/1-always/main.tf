@@ -48,6 +48,19 @@ resource "azurerm_virtual_network" "main" {
   tags = var.tags
 }
 
+# =================================================
+# Subnet 1: Application Gateway 전용 서브넷
+# =================================================
+resource "azurerm_subnet" "appgw" {
+  name                 = "snet-appgw"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = [var.appgw_subnet_cidr]
+}
+
+# =================================================
+# Subnet 2: Web Pod 서브넷 (AKS Web 노드풀용)
+# =================================================
 resource "azurerm_subnet" "web" {
   name                 = "snet-web"
   resource_group_name  = azurerm_resource_group.main.name
@@ -55,6 +68,9 @@ resource "azurerm_subnet" "web" {
   address_prefixes     = [var.web_subnet_cidr]
 }
 
+# =================================================
+# Subnet 3: WAS Pod 서브넷 (AKS WAS 노드풀용)
+# =================================================
 resource "azurerm_subnet" "was" {
   name                 = "snet-was"
   resource_group_name  = azurerm_resource_group.main.name
@@ -62,6 +78,9 @@ resource "azurerm_subnet" "was" {
   address_prefixes     = [var.was_subnet_cidr]
 }
 
+# =================================================
+# Subnet 4: DB 서브넷 (MySQL Flexible Server용)
+# =================================================
 resource "azurerm_subnet" "db" {
   name                 = "snet-db"
   resource_group_name  = azurerm_resource_group.main.name
@@ -77,13 +96,6 @@ resource "azurerm_subnet" "db" {
       ]
     }
   }
-}
-
-resource "azurerm_subnet" "aks" {
-  name                 = "snet-aks"
-  resource_group_name  = azurerm_resource_group.main.name
-  virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = [var.aks_subnet_cidr]
 }
 
 # =================================================

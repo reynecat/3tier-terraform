@@ -58,7 +58,7 @@ variable "master_password" {
 variable "multi_az" {
   description = "Multi-AZ 배포 여부"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "skip_final_snapshot" {

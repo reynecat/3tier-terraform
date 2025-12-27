@@ -81,17 +81,31 @@
 ├── codes/
 │   ├── aws/
 │   │   ├── service/          # AWS 인프라 (VPC, EKS, RDS, Backup)
-│   │   ├── route53/          # DNS 및 Health Check
-│   │   └── monitoring/       # CloudWatch 대시보드
+│   │   ├── route53/          # DNS 및 CloudFront Failover
+│   │   └── monitoring/       # CloudWatch 알람, 대시보드, 자동 복구 Lambda
 │   └── azure/
-│       ├── 1-always/         # 평상시 대기 리소스
-│       └── 2-failover/       # 재해 복구 리소스
+│       ├── 1-always/         # 상시 대기 리소스 (Storage, VNet, 점검 페이지)
+│       └── 2-failover/       # 재해 복구 리소스 (MySQL, AKS, App Gateway)
 ├── docs/
-│   ├── user-guide.md         # 사용자 가이드
-│   ├── troubleshooting.md    # 트러블슈팅
+│   ├── aws-infrastructure.md     # AWS 인프라 상세 가이드 (신규)
+│   ├── azure-infrastructure.md   # Azure 인프라 상세 가이드 (신규)
+│   ├── architecture.md           # 전체 시스템 아키텍처
+│   ├── user-guide.md             # 사용자 배포 가이드
+│   ├── backup-system.md          # 백업 시스템 가이드
+│   ├── troubleshooting.md        # 트러블슈팅
 │   └── dr-failover-procedure.md  # DR 절차서
 └── README.md
 ```
+
+### 디렉토리별 상세 설명
+
+| 디렉토리 | 설명 | 관련 문서 |
+|----------|------|-----------|
+| `codes/aws/service/` | VPC, EKS, RDS, 백업 인스턴스 - AWS Primary Site 핵심 인프라 | [aws-infrastructure.md](docs/aws-infrastructure.md) |
+| `codes/aws/route53/` | CloudFront Origin Failover, Route53 DNS 관리 | [aws-infrastructure.md](docs/aws-infrastructure.md#codesawsroute53---dns-및-failover) |
+| `codes/aws/monitoring/` | CloudWatch 알람 (20+), 대시보드, 자동 복구 Lambda | [aws-infrastructure.md](docs/aws-infrastructure.md#codesawsmonitoring---모니터링-및-자동-복구) |
+| `codes/azure/1-always/` | 상시 대기 (~$5/월): VNet, Storage, 점검 페이지 | [azure-infrastructure.md](docs/azure-infrastructure.md#codesazure1-always---상시-대기-리소스) |
+| `codes/azure/2-failover/` | 장애 시 배포: MySQL, AKS, Application Gateway | [azure-infrastructure.md](docs/azure-infrastructure.md#codesazure2-failover---재해-복구-리소스) |
 
 ---
 
@@ -248,9 +262,19 @@ curl -I https://blueisthenewblack.store/
 
 ## 📚 문서
 
-- **[사용자 가이드](docs/user-guide.md)**: 처음부터 끝까지 배포 방법
-- **[트러블슈팅](docs/troubleshooting.md)**: 문제 해결 방법 (8개 섹션)
+### 인프라 가이드 (신규)
+- **[AWS 인프라 가이드](docs/aws-infrastructure.md)**: VPC, EKS, RDS 모듈 설계 철학, 서비스 플로우, 리소스 의존성
+- **[Azure 인프라 가이드](docs/azure-infrastructure.md)**: Pilot Light 3단계 전략, 1-always/2-failover 구성, 비용 분석
+
+### 아키텍처 및 배포
+- **[전체 아키텍처](docs/architecture.md)**: 시스템 아키텍처 개요, 네트워크 토폴로지, 데이터 흐름
+- **[사용자 가이드](docs/user-guide.md)**: 처음부터 끝까지 배포 방법 (단계별 안내)
+
+### 운영 및 장애 대응
+- **[백업 시스템](docs/backup-system.md)**: AWS RDS → Azure Blob 백업 구성
+- **[모니터링](docs/MONITORING.md)**: CloudWatch 알람, 대시보드, 자동 복구 설정
 - **[DR 절차서](docs/dr-failover-procedure.md)**: 재해 복구 체크리스트
+- **[트러블슈팅](docs/troubleshooting.md)**: 문제 해결 방법 (8개 섹션)
 
 ---
 

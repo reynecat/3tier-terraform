@@ -18,6 +18,10 @@ resource "aws_vpc" "main" {
     Name        = "${var.environment}-vpc"
     Environment = var.environment
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # =================================================
@@ -31,6 +35,13 @@ resource "aws_internet_gateway" "main" {
     Name        = "${var.environment}-igw"
     Environment = var.environment
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  # Note: IGW 삭제 전에 모든 EIP를 먼저 해제해야 함
+  depends_on = [aws_eip.nat]
 }
 
 
@@ -52,6 +63,13 @@ resource "aws_subnet" "public" {
     Name        = "${var.environment}-public-${count.index + 1}"
     Environment = var.environment
     Type        = "Public"
+    # ELB가 이 서브넷을 사용할 수 있도록 태그 추가
+    "kubernetes.io/role/elb" = "1"
+  }
+
+  # 서브넷 삭제 시 의존 리소스(ENI, ALB 등) 정리 시간 확보
+  timeouts {
+    delete = "20m"
   }
 }
 
@@ -73,6 +91,11 @@ resource "aws_subnet" "web" {
     "kubernetes.io/role/internal-elb" = "1"
     "kubernetes.io/cluster/${var.environment}-eks" = "shared"
   }
+
+  # 서브넷 삭제 시 의존 리소스(ENI, ALB 등) 정리 시간 확보
+  timeouts {
+    delete = "20m"
+  }
 }
 
 # =================================================
@@ -92,6 +115,11 @@ resource "aws_subnet" "was" {
     Type                              = "Private"
     "kubernetes.io/role/internal-elb" = "1"
     "kubernetes.io/cluster/${var.environment}-eks" = "shared"
+  }
+
+  # 서브넷 삭제 시 의존 리소스(ENI, ALB 등) 정리 시간 확보
+  timeouts {
+    delete = "20m"
   }
 }
 
