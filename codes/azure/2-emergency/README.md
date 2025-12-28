@@ -1,6 +1,6 @@
 # PlanB Azure 3-failover
 
-재해 시 배포: MySQL + AKS 클러스터 + PetClinic
+재해 시 배포: MySQL + AKS 클러스터 + PocketBank
 
 ## 포함 리소스
 
@@ -95,10 +95,10 @@ kubectl get nodes
 kubectl get namespaces
 ```
 
-### Step 4: PetClinic 배포
+### Step 4: PocketBank 배포
 ```bash
 cd scripts
-./deploy-petclinic.sh
+./deploy-pocketbank.sh
 
 # 또는 수동 배포
 kubectl apply -f k8s/namespace.yaml
@@ -148,7 +148,7 @@ mysql -h mysql-dr-prod.mysql.database.azure.com \
 
 # 데이터베이스 확인
 SHOW DATABASES;
-USE petclinic;
+USE pocketbank;
 SHOW TABLES;
 ```
 
@@ -193,7 +193,7 @@ curl https://example.com
 │ └─────────────────────────────────────┘ │
 │               ↓                         │
 │ ┌─────────────────────────────────────┐ │
-│ │ WAS Tier (Spring PetClinic)         │ │
+│ │ WAS Tier (Spring PocketBank)         │ │
 │ │ - Replicas: 2                       │ │
 │ │ - Service: ClusterIP                │ │
 │ └─────────────────────────────────────┘ │
@@ -203,7 +203,7 @@ curl https://example.com
 │ MySQL Flexible Server                   │
 │                                         │
 │ - FQDN: mysql-dr-prod.mysql...          │
-│ - Database: petclinic                   │
+│ - Database: pocketbank                   │
 └─────────────────────────────────────────┘
 ```
 

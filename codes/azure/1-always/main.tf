@@ -374,6 +374,7 @@ resource "aws_route53_record" "azure_maintenance" {
   name    = var.subdomain_name
   type    = "CNAME"
   ttl     = 300
+  allow_overwrite = true
 
   records = ["${var.storage_account_name}.z12.web.core.windows.net"]
 }

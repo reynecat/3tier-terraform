@@ -82,13 +82,13 @@ controller:
       jobs: |
         jobs:
           - script: >
-              multibranchPipelineJob('petclinic') {
+              multibranchPipelineJob('pocketbank') {
                   branchSources {
                       github {
-                          id('petclinic-github')
+                          id('pocketbank-github')
                           scanCredentialsId('github-credentials')
                           repoOwner('your-org')
-                          repository('spring-petclinic')
+                          repository('spring-pocketbank')
                       }
                   }
                   orphanedItemStrategy {

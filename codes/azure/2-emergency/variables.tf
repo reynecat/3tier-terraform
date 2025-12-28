@@ -40,7 +40,7 @@ variable "storage_account_name" {
 variable "db_name" {
   description = "데이터베이스 이름"
   type        = string
-  default     = "petclinic"
+  default     = "pocketbank"
 }
 
 variable "db_username" {

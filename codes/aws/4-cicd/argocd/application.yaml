@@ -1,23 +1,23 @@
-# ArgoCD Application for AWS EKS PetClinic
+# ArgoCD Application for AWS EKS PocketBank
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
-  name: petclinic
+  name: pocketbank
   namespace: argocd
 spec:
-  description: "PetClinic Application Project"
+  description: "PocketBank Application Project"
 
   # 소스 레포지토리 허용 목록
   sourceRepos:
-    - 'https://github.com/your-org/petclinic-gitops.git'
-    - 'https://github.com/your-org/spring-petclinic.git'
+    - 'https://github.com/your-org/pocketbank-gitops.git'
+    - 'https://github.com/your-org/spring-pocketbank.git'
 
   # 배포 대상 클러스터 및 네임스페이스
   destinations:
-    - namespace: petclinic
+    - namespace: pocketbank
       server: https://kubernetes.default.svc
-    - namespace: petclinic-staging
+    - namespace: pocketbank-staging
       server: https://kubernetes.default.svc
 
   # 클러스터 리소스 허용 목록
@@ -43,16 +43,16 @@ spec:
     - name: developer
       description: Developer role with read access
       policies:
-        - p, proj:petclinic:developer, applications, get, petclinic/*, allow
-        - p, proj:petclinic:developer, applications, sync, petclinic/*, allow
+        - p, proj:pocketbank:developer, applications, get, pocketbank/*, allow
+        - p, proj:pocketbank:developer, applications, sync, pocketbank/*, allow
       groups:
         - your-org:developers
 
     - name: admin
       description: Admin role with full access
       policies:
-        - p, proj:petclinic:admin, applications, *, petclinic/*, allow
-        - p, proj:petclinic:admin, repositories, *, petclinic/*, allow
+        - p, proj:pocketbank:admin, applications, *, pocketbank/*, allow
+        - p, proj:pocketbank:admin, repositories, *, pocketbank/*, allow
       groups:
         - your-org:devops-team
 
@@ -60,10 +60,10 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: petclinic-aws
+  name: pocketbank-aws
   namespace: argocd
   labels:
-    app: petclinic
+    app: pocketbank
     environment: production
     cloud: aws
   annotations:
@@ -73,21 +73,22 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: petclinic
+  project: pocketbank
 
   source:
-    repoURL: https://github.com/your-org/petclinic-gitops.git
+    repoURL: https://github.com/your-org/pocketbank-gitops.git
     targetRevision: main
     path: overlays/aws-prod
 
     # Kustomize 설정
     kustomize:
       images:
-        - ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/petclinic:latest
+        - cloud039/pocketbank-web:latest
+        - cloud039/pocketbank-was:latest
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: petclinic
+    namespace: pocketbank
 
   # 동기화 정책
   syncPolicy:
@@ -124,23 +125,23 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: petclinic-aws-staging
+  name: pocketbank-aws-staging
   namespace: argocd
   labels:
-    app: petclinic
+    app: pocketbank
     environment: staging
     cloud: aws
 spec:
-  project: petclinic
+  project: pocketbank
 
   source:
-    repoURL: https://github.com/your-org/petclinic-gitops.git
+    repoURL: https://github.com/your-org/pocketbank-gitops.git
     targetRevision: develop
     path: overlays/aws-staging
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: petclinic-staging
+    namespace: pocketbank-staging
 
   syncPolicy:
     automated:
@@ -155,33 +156,33 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: petclinic-envs
+  name: pocketbank-envs
   namespace: argocd
 spec:
   generators:
     - list:
         elements:
           - env: dev
-            namespace: petclinic-dev
+            namespace: pocketbank-dev
             branch: develop
             autoSync: true
           - env: staging
-            namespace: petclinic-staging
+            namespace: pocketbank-staging
             branch: staging
             autoSync: true
           - env: prod
-            namespace: petclinic
+            namespace: pocketbank
             branch: main
             autoSync: false  # Production은 수동 승인
 
   template:
     metadata:
-      name: 'petclinic-{{env}}'
+      name: 'pocketbank-{{env}}'
       namespace: argocd
     spec:
-      project: petclinic
+      project: pocketbank
       source:
-        repoURL: https://github.com/your-org/petclinic-gitops.git
+        repoURL: https://github.com/your-org/pocketbank-gitops.git
         targetRevision: '{{branch}}'
         path: 'overlays/aws-{{env}}'
       destination:

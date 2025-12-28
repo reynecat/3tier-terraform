@@ -27,7 +27,7 @@
 │                                                                              │
 │  ┌──────────────┐    ┌────────────────────┐    ┌───────────────────────┐   │
 │  │   GitHub     │───▶│  CI (Jenkins or    │───▶│  Container Registry   │   │
-│  │  Repository  │    │  GitHub Actions)   │    │  (ECR / ACR)          │   │
+│  │  Repository  │    │  GitHub Actions)   │    │  (DockerHub)          │   │
 │  └──────────────┘    └────────────────────┘    └───────────────────────┘   │
 │         │                     │                          │                  │
 │         │                     │                          │                  │
@@ -52,7 +52,7 @@
 | 컴포넌트 | 역할 | AWS | Azure |
 |---------|------|-----|-------|
 | CI Tool | 빌드, 테스트, 이미지 생성 | Jenkins / GitHub Actions | Jenkins / GitHub Actions |
-| Container Registry | 이미지 저장소 | Amazon ECR | Azure ACR |
+| Container Registry | 이미지 저장소 | DockerHub | DockerHub |
 | CD Tool | GitOps 기반 배포 | ArgoCD | ArgoCD |
 | Kubernetes | 워크로드 실행 | Amazon EKS | Azure AKS |
 
@@ -137,6 +137,12 @@ withCredentials([azureServicePrincipal('azure-service-principal')]) {
 
 1. **GitHub Secrets 설정**
 
+   **공통 (DockerHub):**
+   | Secret Name | 설명 |
+   |-------------|------|
+   | `DOCKERHUB_USERNAME` | DockerHub 사용자명 |
+   | `DOCKERHUB_TOKEN` | DockerHub Access Token |
+
    **AWS 환경:**
    | Secret Name | 설명 |
    |-------------|------|
@@ -152,8 +158,6 @@ withCredentials([azureServicePrincipal('azure-service-principal')]) {
    | Secret Name | 설명 |
    |-------------|------|
    | `AZURE_CREDENTIALS` | Azure 서비스 프린시펄 JSON |
-   | `ACR_USERNAME` | ACR 사용자명 |
-   | `ACR_PASSWORD` | ACR 비밀번호 |
    | `ARGOCD_SERVER_AZURE` | ArgoCD 서버 주소 |
    | `ARGOCD_AUTH_TOKEN_AZURE` | ArgoCD 인증 토큰 |
    | `TEAMS_WEBHOOK_URL` | Teams 알림 URL |
@@ -226,14 +230,14 @@ argocd login argocd.example.com --username admin --password <password>
 argocd app list
 
 # 애플리케이션 상태 확인
-argocd app get petclinic-aws
-argocd app get petclinic-azure
+argocd app get pocketbank-aws
+argocd app get pocketbank-azure
 
 # 수동 동기화
-argocd app sync petclinic-aws
+argocd app sync pocketbank-aws
 
 # 히스토리 확인
-argocd app history petclinic-aws
+argocd app history pocketbank-aws
 ```
 
 ---
@@ -241,7 +245,7 @@ argocd app history petclinic-aws
 ## GitOps 레포지토리 구조
 
 ```
-petclinic-gitops/
+pocketbank-gitops/
 ├── base/                          # 기본 Kubernetes 매니페스트
 │   ├── kustomization.yaml
 │   ├── namespace.yaml
@@ -280,7 +284,7 @@ petclinic-gitops/
 │           └── ingress-azure-patch.yaml
 │
 └── charts/                        # Helm 차트 (선택사항)
-    └── petclinic/
+    └── pocketbank/
         ├── Chart.yaml
         ├── values.yaml
         └── templates/
@@ -293,7 +297,7 @@ petclinic-gitops/
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: petclinic
+namespace: pocketbank
 
 resources:
   - ../../base
@@ -303,8 +307,8 @@ commonLabels:
   cloud: aws
 
 images:
-  - name: petclinic
-    newName: ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/petclinic
+  - name: pocketbank
+    newName: ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/pocketbank
     newTag: 20241227-abc1234
 
 patches:
@@ -312,7 +316,7 @@ patches:
   - path: patches/ingress-patch.yaml
 
 replicas:
-  - name: petclinic
+  - name: pocketbank
     count: 3
 ```
 
@@ -324,7 +328,7 @@ replicas:
 
 | 항목 | 값 |
 |------|-----|
-| Container Registry | Amazon ECR |
+| Container Registry | DockerHub |
 | Kubernetes | Amazon EKS |
 | Ingress Controller | AWS Load Balancer Controller |
 | TLS Certificate | AWS Certificate Manager (ACM) |
@@ -334,7 +338,7 @@ replicas:
 
 | 항목 | 값 |
 |------|-----|
-| Container Registry | Azure Container Registry (ACR) |
+| Container Registry | DockerHub |
 | Kubernetes | Azure Kubernetes Service (AKS) |
 | Ingress Controller | Application Gateway Ingress Controller (AGIC) |
 | TLS Certificate | Azure Key Vault |
@@ -361,17 +365,18 @@ replicas:
 
 4. **ArgoCD 자동 동기화**
    - ArgoCD가 변경 감지 후 자동 배포
-   - 또는 수동 동기화: `argocd app sync petclinic-aws`
+   - 또는 수동 동기화: `argocd app sync pocketbank-aws`
 
 ### 수동 배포
 
 ```bash
-# 1. 이미지 태그 확인
-aws ecr describe-images --repository-name petclinic --query 'imageDetails[*].imageTags' --output table
+# 1. 이미지 태그 확인 (DockerHub)
+# DockerHub 웹사이트 또는 Docker CLI로 확인
+docker search <DOCKERHUB_USERNAME>/pocketbank
 
 # 2. GitOps 레포에서 태그 업데이트
-cd petclinic-gitops/overlays/aws-prod
-kustomize edit set image petclinic=ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/petclinic:NEW_TAG
+cd pocketbank-gitops/overlays/aws-prod
+kustomize edit set image pocketbank=<DOCKERHUB_USERNAME>/pocketbank:NEW_TAG
 
 # 3. 커밋 및 푸시
 git add .
@@ -379,8 +384,8 @@ git commit -m "chore: Update image tag to NEW_TAG"
 git push origin main
 
 # 4. ArgoCD 동기화
-argocd app sync petclinic-aws
-argocd app wait petclinic-aws --timeout 300
+argocd app sync pocketbank-aws
+argocd app wait pocketbank-aws --timeout 300
 ```
 
 ---
@@ -391,41 +396,41 @@ argocd app wait petclinic-aws --timeout 300
 
 ```bash
 # 히스토리 확인
-argocd app history petclinic-aws
+argocd app history pocketbank-aws
 
 # 특정 리비전으로 롤백
-argocd app rollback petclinic-aws <REVISION_NUMBER>
+argocd app rollback pocketbank-aws <REVISION_NUMBER>
 
 # 롤백 상태 확인
-argocd app get petclinic-aws
+argocd app get pocketbank-aws
 ```
 
 ### Kubernetes를 통한 롤백
 
 ```bash
 # 배포 히스토리 확인
-kubectl rollout history deployment/petclinic -n petclinic
+kubectl rollout history deployment/pocketbank -n pocketbank
 
 # 이전 버전으로 롤백
-kubectl rollout undo deployment/petclinic -n petclinic
+kubectl rollout undo deployment/pocketbank -n pocketbank
 
 # 특정 리비전으로 롤백
-kubectl rollout undo deployment/petclinic -n petclinic --to-revision=2
+kubectl rollout undo deployment/pocketbank -n pocketbank --to-revision=2
 
 # 롤백 상태 확인
-kubectl rollout status deployment/petclinic -n petclinic
+kubectl rollout status deployment/pocketbank -n pocketbank
 ```
 
 ### GitOps 롤백
 
 ```bash
 # 이전 커밋으로 되돌리기
-cd petclinic-gitops
+cd pocketbank-gitops
 git revert HEAD
 git push origin main
 
 # ArgoCD 동기화
-argocd app sync petclinic-aws
+argocd app sync pocketbank-aws
 ```
 
 ---
@@ -494,17 +499,17 @@ argocd_app_reconcile_duration      # 조정 소요 시간
    apiVersion: external-secrets.io/v1beta1
    kind: ExternalSecret
    metadata:
-     name: petclinic-db-secret
+     name: pocketbank-db-secret
    spec:
      secretStoreRef:
        name: aws-secrets-manager  # 또는 azure-keyvault
        kind: SecretStore
      target:
-       name: petclinic-db-secret
+       name: pocketbank-db-secret
      data:
        - secretKey: password
          remoteRef:
-           key: petclinic/database
+           key: pocketbank/database
            property: password
    ```
 
@@ -517,7 +522,7 @@ argocd_app_reconcile_duration      # 조정 소요 시간
 2. **이미지 서명 (선택사항)**
    ```bash
    # Cosign으로 이미지 서명
-   cosign sign --key cosign.key ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+   cosign sign --key cosign.key <DOCKERHUB_USERNAME>/<REPOSITORY>:${IMAGE_TAG}
    ```
 
 ### RBAC 설정
@@ -527,7 +532,7 @@ argocd_app_reconcile_duration      # 조정 소요 시간
 rbac:
   policy.csv: |
     p, role:developer, applications, get, */*, allow
-    p, role:developer, applications, sync, */petclinic-dev, allow
+    p, role:developer, applications, sync, */pocketbank-dev, allow
     p, role:admin, applications, *, */*, allow
     g, DevOps-Team, role:admin
     g, Developers, role:developer
@@ -543,26 +548,31 @@ rbac:
 
 ```bash
 # 애플리케이션 상태 확인
-argocd app get petclinic-aws
+argocd app get pocketbank-aws
 
 # 상세 이벤트 확인
-kubectl describe application petclinic-aws -n argocd
+kubectl describe application pocketbank-aws -n argocd
 
 # 동기화 로그 확인
-argocd app logs petclinic-aws
+argocd app logs pocketbank-aws
 ```
 
 #### 2. 이미지 풀 실패
 
 ```bash
 # Pod 상태 확인
-kubectl describe pod -l app=petclinic -n petclinic
+kubectl describe pod -l app=pocketbank -n pocketbank
 
-# ECR/ACR 인증 확인 (AWS)
-aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+# DockerHub 인증 확인
+docker login -u <DOCKERHUB_USERNAME>
 
-# ACR 인증 확인 (Azure)
-az acr login --name ${ACR_NAME}
+# Kubernetes에서 DockerHub 인증 설정 (Private Repository인 경우)
+kubectl create secret docker-registry dockerhub-secret \
+  --docker-server=https://index.docker.io/v1/ \
+  --docker-username=<DOCKERHUB_USERNAME> \
+  --docker-password=<DOCKERHUB_TOKEN> \
+  --docker-email=<EMAIL> \
+  -n pocketbank
 ```
 
 #### 3. Jenkins 빌드 실패
@@ -579,10 +589,10 @@ kubectl get pods -n jenkins -l jenkins/label=maven
 
 ```bash
 # Pod 로그 확인
-kubectl logs -f deployment/petclinic -n petclinic
+kubectl logs -f deployment/pocketbank -n pocketbank
 
 # 헬스 엔드포인트 직접 확인
-kubectl port-forward svc/petclinic 8080:80 -n petclinic
+kubectl port-forward svc/pocketbank 8080:80 -n pocketbank
 curl http://localhost:8080/actuator/health
 ```
 
@@ -590,17 +600,17 @@ curl http://localhost:8080/actuator/health
 
 ```bash
 # ArgoCD 애플리케이션 강제 동기화
-argocd app sync petclinic-aws --force
+argocd app sync pocketbank-aws --force
 
 # ArgoCD 캐시 무효화
-argocd app terminate-op petclinic-aws
-argocd app sync petclinic-aws --prune
+argocd app terminate-op pocketbank-aws
+argocd app sync pocketbank-aws --prune
 
 # 모든 리소스 상태 확인
-argocd app resources petclinic-aws
+argocd app resources pocketbank-aws
 
 # GitOps 레포와의 차이 확인
-argocd app diff petclinic-aws
+argocd app diff pocketbank-aws
 ```
 
 ---

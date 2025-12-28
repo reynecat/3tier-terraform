@@ -11,7 +11,7 @@
 - **고가용성(HA)**: 단일 클라우드 장애에도 서비스 지속
 - **자동화**: Terraform을 통한 인프라 코드화 및 재현 가능한 배포
 - **비용 최적화**: Pilot Light 패턴으로 DR 사이트 대기 비용 최소화
-- **실전 적용**: 실제 Spring PetClinic 애플리케이션 기반 검증
+- **실전 적용**: 실제 Spring PocketBank 애플리케이션 기반 검증
 
 ---
 
@@ -19,7 +19,7 @@
 
 ### 전체 구조
 
-```
+
 ┌─────────────────────────────────────────────────────────────┐
 │                         사용자                               │
 └────────────────────┬────────────────────────────────────────┘
@@ -38,13 +38,50 @@
          │                       │
     ┌────▼─────┐          ┌─────▼─────┐
     │ EKS      │          │ AKS       │
-    │ PetClinic│          │ PetClinic │
+    │ PocketBank│          │ PocketBank │
     └────┬─────┘          └─────┬─────┘
          │                      │
     ┌────▼─────┐          ┌────▼──────┐
     │ RDS      │──Backup→ │ MySQL     │
     │ MySQL    │          │ Flexible  │
-    └──────────┘          └───────────┘
+    └──────────┘          └───────────┘ 
+
+```mermaid
+flowchart TD
+    User[👤 사용자]
+
+    User --> CloudFront
+
+    CloudFront[☁️ CloudFront<br/>Origin Failover]
+
+    CloudFront --> ALB
+    CloudFront -.Secondary.-> AppGW
+
+    ALB[⚖️ AWS ALB<br/>Primary]
+    AppGW[🚪 Azure App GW<br/>Secondary]
+
+    ALB --> EKS
+    AppGW --> AKS
+
+    EKS[📦 EKS<br/>PocketBank]
+    AKS[📦 AKS<br/>PocketBank]
+
+    EKS --> RDS
+    AKS --> AzureMySQL
+
+    RDS[🗄️ RDS MySQL]
+    AzureMySQL[🗄️ MySQL Flexible]
+
+    RDS -.Daily Backup.-> AzureMySQL
+
+    style User fill:#e1f5ff
+    style CloudFront fill:#ff9900
+    style ALB fill:#ff9900
+    style EKS fill:#ff9900
+    style RDS fill:#ff9900
+    style AppGW fill:#0078d4
+    style AKS fill:#0078d4
+    style AzureMySQL fill:#0078d4
 ```
 
 ### 기술 스택
@@ -69,7 +106,9 @@
 - **Storage**: Blob Storage (백업 수신)
 
 #### Application
-- **Spring PetClinic**: Spring Boot 2.x 기반 샘플 애플리케이션
+- **Spring PocketBank**: Spring Boot 3.x 기반 금융 데모 애플리케이션
+  - WAS: `cloud039/pocketbank-was:latest` (Spring Boot + Actuator)
+  - Web: `cloud039/pocketbank-web:latest` (Nginx reverse proxy)
 - **Container**: Docker + Kubernetes Deployment
 
 ---
@@ -105,7 +144,7 @@
 | `codes/aws/route53/` | CloudFront Origin Failover, Route53 DNS 관리 | [aws-infrastructure.md](docs/aws-infrastructure.md#codesawsroute53---dns-및-failover) |
 | `codes/aws/monitoring/` | CloudWatch 알람 (20+), 대시보드, 자동 복구 Lambda | [aws-infrastructure.md](docs/aws-infrastructure.md#codesawsmonitoring---모니터링-및-자동-복구) |
 | `codes/azure/1-always/` | 상시 대기 (~$5/월): VNet, Storage, 점검 페이지 | [azure-infrastructure.md](docs/azure-infrastructure.md#codesazure1-always---상시-대기-리소스) |
-| `codes/azure/2-failover/` | 장애 시 배포: MySQL, AKS, Application Gateway | [azure-infrastructure.md](docs/azure-infrastructure.md#codesazure2-failover---재해-복구-리소스) |
+| `codes/azure/2-emergency/` | 긴급 복구 시 배포: MySQL, AKS, Application Gateway, PocketBank 매니페스트 | [azure-infrastructure.md](docs/azure-infrastructure.md#codesazure2-emergency---재해-복구-리소스) |
 
 ---
 
@@ -127,16 +166,21 @@ AWS RDS → EC2 Backup Instance → Azure Blob Storage
 
 ### 3. **Multi-Cloud Failover**
 - **CloudFront Origin Failover**: Primary(AWS) 장애 시 Secondary(Azure)로 수동 전환
-- **Application Gateway**: Azure AKS → PetClinic 서비스 프록시
+- **Application Gateway**: Azure AKS → PocketBank 서비스 프록시
 - **SSL/TLS**: AppGwSslPolicy20220101 (TLS 1.2+)
 
 ### 4. **Infrastructure as Code**
-```hcl
-# 예시: Azure 2-failover 배포
-cd codes/azure/2-failover
+```bash
+# 예시: Azure 2-emergency 배포
+cd codes/azure/2-emergency
 terraform init
 terraform apply
 # → 15-20분 내 MySQL, AKS, App Gateway 자동 생성
+
+# PocketBank 애플리케이션 배포
+cd scripts
+./deploy-pocketbank.sh
+# → 5-10분 내 WAS/Web Pod 배포 및 LoadBalancer 설정
 ```
 
 ### 5. **모니터링 및 로깅**
@@ -186,11 +230,13 @@ terraform apply
 | 단계 | 작업 | 소요 시간 | 상태 |
 |------|------|-----------|------|
 | T+0  | AWS 장애 감지 | - | 🔴 서비스 중단 |
-| T+1  | 담당자 CloudFront origin 수동 전환 | 1분 | 🟡 전환 중 |
-| T+5  | CloudFront 배포 완료 | 4분 | 🟢 Azure로 서비스 |
-| 합계 | | **5분** | ✅ 복구 완료 |
+| T+1  | 담당자 Azure 2-emergency 리소스 배포 시작 | 1분 | 🟡 복구 중 |
+| T+15 | MySQL + AKS + App Gateway 프로비저닝 완료 | 14분 | 🟡 복구 중 |
+| T+20 | PocketBank 애플리케이션 배포 완료 | 5분 | 🟡 복구 중 |
+| T+21 | CloudFront origin을 Azure로 수동 전환 | 1분 | 🟢 Azure로 서비스 |
+| 합계 | | **21분** | ✅ 복구 완료 |
 
-**RTO (Recovery Time Objective)**: 5분
+**RTO (Recovery Time Objective)**: 21분 (Pilot Light 패턴)
 **RPO (Recovery Point Objective)**: 24시간 (마지막 백업 기준)
 
 ---
@@ -262,9 +308,10 @@ curl -I https://blueisthenewblack.store/
 
 ## 📚 문서
 
-### 인프라 가이드 (신규)
+### 인프라 가이드
 - **[AWS 인프라 가이드](docs/aws-infrastructure.md)**: VPC, EKS, RDS 모듈 설계 철학, 서비스 플로우, 리소스 의존성
-- **[Azure 인프라 가이드](docs/azure-infrastructure.md)**: Pilot Light 3단계 전략, 1-always/2-failover 구성, 비용 분석
+- **[Azure 인프라 가이드](docs/azure-infrastructure.md)**: Pilot Light 3단계 전략, 1-always/2-emergency 구성, 비용 분석
+- **[PocketBank 구축 리포트](docs/POCKETBANK_REPORT.md)**: PocketBank 애플리케이션 기반 멀티클라우드 DR 솔루션 설계 상세 문서
 
 ### 아키텍처 및 배포
 - **[전체 아키텍처](docs/architecture.md)**: 시스템 아키텍처 개요, 네트워크 토폴로지, 데이터 흐름
@@ -273,8 +320,13 @@ curl -I https://blueisthenewblack.store/
 ### 운영 및 장애 대응
 - **[백업 시스템](docs/backup-system.md)**: AWS RDS → Azure Blob 백업 구성
 - **[모니터링](docs/MONITORING.md)**: CloudWatch 알람, 대시보드, 자동 복구 설정
+- **[모니터링 설정 가이드](docs/MONITORING_SETUP_GUIDE.md)**: CloudWatch 모니터링 상세 설정 가이드
 - **[DR 절차서](docs/dr-failover-procedure.md)**: 재해 복구 체크리스트
+- **[DR 테스트 가이드](docs/dr-failover-testing-guide.md)**: 재해 복구 시뮬레이션 테스트 가이드
 - **[트러블슈팅](docs/troubleshooting.md)**: 문제 해결 방법 (8개 섹션)
+
+### CI/CD
+- **[CI/CD 가이드](docs/CICD_GUIDE.md)**: GitHub Actions, Jenkins, ArgoCD 설정 가이드
 
 ---
 
@@ -311,8 +363,9 @@ curl -I https://blueisthenewblack.store/
 
 ---
 
-**문서 버전**: v2.0
-**최종 수정**: 2025-12-23
+**문서 버전**: v2.1
+**최종 수정**: 2025-12-28
 **작성자**: I2ST-blue
 
 **프로젝트 데모**: https://blueisthenewblack.store
+**애플리케이션**: Spring Boot PocketBank (금융 데모 애플리케이션)

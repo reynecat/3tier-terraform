@@ -39,9 +39,6 @@ resource "aws_internet_gateway" "main" {
   lifecycle {
     create_before_destroy = true
   }
-
-  # Note: IGW 삭제 전에 모든 EIP를 먼저 해제해야 함
-  depends_on = [aws_eip.nat]
 }
 
 

@@ -1,5 +1,5 @@
 # PlanB/azure/3-failover/main.tf
-# 재해 시 배포: MySQL + AKS 클러스터 + PetClinic 배포
+# 재해 시 배포: MySQL + AKS 클러스터 + PocketBank 배포
 
 terraform {
   required_version = ">= 1.14.0"
@@ -81,13 +81,8 @@ resource "azurerm_mysql_flexible_server" "main" {
   backup_retention_days        = 7
   geo_redundant_backup_enabled = false
 
-  # Zone-Redundant 고가용성 설정
+  # Zone 설정 (HA 비활성화 - Burstable edition은 HA 미지원)
   zone = "1"
-
-  high_availability {
-    mode                      = "ZoneRedundant"
-    standby_availability_zone = "2"
-  }
 
   storage {
     size_gb = var.mysql_storage_gb
@@ -252,13 +247,13 @@ resource "azurerm_application_gateway" "main" {
     port = 80
   }
 
-  # Backend Pool - AKS PetClinic LoadBalancer
+  # Backend Pool - AKS PocketBank LoadBalancer
   backend_address_pool {
     name         = local.backend_address_pool_name
     ip_addresses = ["20.214.124.157"]
   }
 
-  # HTTP Settings - AKS PetClinic용 (HTTP)
+  # HTTP Settings - AKS PocketBank용 (HTTP)
   backend_http_settings {
     name                  = local.http_setting_name
     cookie_based_affinity = "Disabled"
@@ -268,7 +263,7 @@ resource "azurerm_application_gateway" "main" {
     probe_name            = local.probe_name
   }
 
-  # Health Probe - AKS PetClinic 점검
+  # Health Probe - AKS PocketBank 점검
   probe {
     name                = local.probe_name
     protocol            = "Http"

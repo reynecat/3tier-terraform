@@ -553,7 +553,7 @@ mysql -h <azure-mysql-host> \
 
 ### 4. 자동 복구 스크립트
 
-**파일**: `codes/azure/2-failover/restore-db.sh`
+**파일**: `codes/azure/2-emergency/restore-db.sh`
 
 ```bash
 #!/bin/bash

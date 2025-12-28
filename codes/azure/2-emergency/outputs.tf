@@ -77,7 +77,8 @@ output "deployment_summary" {
   AKS 클러스터:
     - Name: ${azurerm_kubernetes_cluster.main.name}
     - Kubernetes: ${var.kubernetes_version}
-    - Nodes: ${var.node_count} (min: ${var.node_min_count}, max: ${var.node_max_count})
+    - Web Nodes: ${var.web_node_count} (min: ${var.web_node_min_count}, max: ${var.web_node_max_count})
+    - WAS Nodes: ${var.was_node_count} (min: ${var.was_node_min_count}, max: ${var.was_node_max_count})
     - VM Size: ${var.node_vm_size}
 
   Application Gateway:
@@ -94,9 +95,9 @@ output "deployment_summary" {
     2. kubectl 설정
        az aks get-credentials --resource-group ${var.resource_group_name} --name ${azurerm_kubernetes_cluster.main.name}
 
-    3. PetClinic 배포
+    3. PocketBank 배포
        cd scripts
-       ./deploy-petclinic.sh
+       ./deploy-pocketbank.sh
 
     4. App Gateway를 AKS로 전환
        cd scripts

@@ -38,7 +38,7 @@ Multi-Cloud DR 시스템을 처음부터 끝까지 배포하는 방법을 단계
 | 준비 작업 | 30분 | 도구 설치, 계정 설정 |
 | Azure 대기 배포 | 10분 | Storage, VNet 생성 |
 | AWS Primary 배포 | 60분 | EKS, RDS 등 생성 |
-| 애플리케이션 배포 | 30분 | PetClinic 배포 |
+| 애플리케이션 배포 | 30분 | PocketBank 배포 |
 | **총 소요 시간** | **약 2시간 30분** | - |
 
 ### 1.3 예상 비용
@@ -325,7 +325,7 @@ azure_tenant_id             = "YOUR_TENANT_ID"
 azure_subscription_id       = "YOUR_SUBSCRIPTION_ID"
 
 # 데이터베이스 설정
-db_name     = "petclinic"
+db_name     = "pocketbank"
 db_username = "admin"
 db_password = "MySecurePassword123!"  # ← 보안 강화 필요 (대소문자+숫자+특수문자)
 
@@ -396,7 +396,7 @@ kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-cont
 
 **문제가 발생하면:** [트러블슈팅 가이드](troubleshooting.md#11-aws-load-balancer-controller-설치-실패) 참조
 
-### 4.4 PetClinic 애플리케이션 배포
+### 4.4 PocketBank 애플리케이션 배포
 
 #### 1) Namespace 생성
 
@@ -417,7 +417,7 @@ echo "RDS Host: $RDS_HOST"
 
 # Secret 생성 (terraform.tfvars의 비밀번호와 동일하게!)
 kubectl create secret generic db-credentials \
-  --from-literal=url="jdbc:mysql://${RDS_HOST}:3306/petclinic" \
+  --from-literal=url="jdbc:mysql://${RDS_HOST}:3306/pocketbank" \
   --from-literal=username="admin" \
   --from-literal=password="MySecurePassword123!" \
   --namespace=was
@@ -441,7 +441,7 @@ kubectl apply -f was/service.yaml
 kubectl get pods -n was -w
 # Ctrl+C로 중단
 
-# 로그 확인 (PetClinic 시작 확인)
+# 로그 확인 (PocketBank 시작 확인)
 kubectl logs -n was -l app=was-spring --tail=20 | grep "Started"
 ```
 
@@ -498,7 +498,7 @@ echo "ALB URL: http://$ALB_DNS"
 curl -I http://$ALB_DNS
 ```
 
-**✅ 성공!** PetClinic이 보이면 성공!
+**✅ 성공!** PocketBank이 보이면 성공!
 
 ---
 
@@ -507,7 +507,7 @@ curl -I http://$ALB_DNS
 ### 5.1 Azure DR 사이트 배포
 
 ```bash
-cd ~/3tier-terraform/codes/azure/2-failover
+cd ~/3tier-terraform/codes/azure/2-emergency
 
 # 설정 파일
 cp terraform.tfvars.example terraform.tfvars
@@ -528,7 +528,7 @@ vnet_name            = "vnet-dr-blue"
 storage_account_name = "bloberry01"
 
 # MySQL 설정 (AWS와 동일하게)
-db_name     = "petclinic"
+db_name     = "pocketbank"
 db_username = "mysqladmin"
 db_password = "MySecurePassword123!"
 
@@ -582,53 +582,53 @@ az storage blob download \
 gunzip /tmp/backup.sql.gz
 
 # MySQL 복구
-export MYSQL_HOST=$(cd ~/3tier-terraform/codes/azure/2-failover && terraform output -raw mysql_fqdn)
+export MYSQL_HOST=$(cd ~/3tier-terraform/codes/azure/2-emergency && terraform output -raw mysql_fqdn)
 
 mysql -h $MYSQL_HOST -u mysqladmin -p < /tmp/backup.sql
 # 비밀번호 입력: MySecurePassword123!
 ```
 
-### 5.4 PetClinic 배포 (AKS)
+### 5.4 PocketBank 배포 (AKS)
 
 ```bash
 # Namespace 생성
-kubectl create namespace petclinic
+kubectl create namespace pocketbank
 
 # Secret 생성
 kubectl create secret generic db-credentials \
-  --from-literal=url="jdbc:mysql://${MYSQL_HOST}:3306/petclinic" \
+  --from-literal=url="jdbc:mysql://${MYSQL_HOST}:3306/pocketbank" \
   --from-literal=username="mysqladmin" \
   --from-literal=password="MySecurePassword123!" \
-  --namespace=petclinic
+  --namespace=pocketbank
 
 # Deployment + Service 생성 (한 번에)
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: petclinic-config
-  namespace: petclinic
+  name: pocketbank-config
+  namespace: pocketbank
 data:
   SPRING_PROFILES_ACTIVE: mysql
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: petclinic
-  namespace: petclinic
+  name: pocketbank
+  namespace: pocketbank
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: petclinic
+      app: pocketbank
   template:
     metadata:
       labels:
-        app: petclinic
+        app: pocketbank
     spec:
       containers:
-      - name: petclinic
-        image: springcommunity/spring-petclinic:latest
+      - name: pocketbank
+        image: springcommunity/spring-pocketbank:latest
         ports:
         - containerPort: 8080
         env:
@@ -650,28 +650,28 @@ spec:
         - name: SPRING_PROFILES_ACTIVE
           valueFrom:
             configMapKeyRef:
-              name: petclinic-config
+              name: pocketbank-config
               key: SPRING_PROFILES_ACTIVE
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: petclinic
-  namespace: petclinic
+  name: pocketbank
+  namespace: pocketbank
 spec:
   type: LoadBalancer
   ports:
   - port: 8080
     targetPort: 8080
   selector:
-    app: petclinic
+    app: pocketbank
 EOF
 
 # Pod 시작 확인
-kubectl get pods -n petclinic -w
+kubectl get pods -n pocketbank -w
 ```
 
-**Pod가 CrashLoopBackOff면:** [트러블슈팅](troubleshooting.md#85-aks-petclinic-pod-crashloopbackoff-mysql-연결-실패) 참조
+**Pod가 CrashLoopBackOff면:** [트러블슈팅](troubleshooting.md#85-aks-pocketbank-pod-crashloopbackoff-mysql-연결-실패) 참조
 
 ### 5.5 Application Gateway 주소 확인
 
@@ -687,7 +687,7 @@ az network public-ip show \
 curl -I http://<APP_GATEWAY_IP>/
 ```
 
-**✅ 성공!** Azure에서 PetClinic이 정상 작동하면 DR 테스트 완료!
+**✅ 성공!** Azure에서 PocketBank이 정상 작동하면 DR 테스트 완료!
 
 ---
 
@@ -699,7 +699,7 @@ curl -I http://<APP_GATEWAY_IP>/
 
 ```bash
 # 1. Azure DR 리소스 삭제
-cd ~/3tier-terraform/codes/azure/2-failover
+cd ~/3tier-terraform/codes/azure/2-emergency
 terraform destroy
 # yes 입력
 

@@ -60,12 +60,12 @@ flowchart TB
                 direction LR
                 subgraph WASAZ1["AZ-a: 10.0.21.0/24"]
                     WASNode1["EKS Node<br/>t3.medium"]
-                    WASPod1["Spring Boot<br/>PetClinic :8080"]
+                    WASPod1["Spring Boot<br/>PocketBank :8080"]
                     BackupEC2["Backup EC2<br/>t3.small"]
                 end
                 subgraph WASAZ2["AZ-c: 10.0.22.0/24"]
                     WASNode2["EKS Node<br/>t3.medium"]
-                    WASPod2["Spring Boot<br/>PetClinic :8080"]
+                    WASPod2["Spring Boot<br/>PocketBank :8080"]
                 end
             end
 

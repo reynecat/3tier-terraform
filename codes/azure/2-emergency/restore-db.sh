@@ -16,7 +16,7 @@ MYSQL_HOST="mysql-dr-blue.mysql.database.azure.com"
 RESOURCE_GROUP="rg-dr-blue"
 STORAGE_ACCOUNT="bloberry01"
 CONTAINER="mysql-backups"
-DB_NAME="petclinic"
+DB_NAME="pocketbank"
 DB_USER="mysqladmin"
 # ============================================
 

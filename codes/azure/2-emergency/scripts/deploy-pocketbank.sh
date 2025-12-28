@@ -1,11 +1,11 @@
 #!/bin/bash
-# PlanB/azure/3-failover/scripts/deploy-petclinic.sh
-# AKS에 PetClinic 배포
+# PlanB/azure/3-failover/scripts/deploy-pocketbank.sh
+# AKS에 PocketBank 배포
 
 set -e
 
 echo "=========================================="
-echo "PetClinic 배포 (AKS - Full Failover)"
+echo "PocketBank 배포 (AKS - Full Failover)"
 echo "시작 시간: $(date)"
 echo "=========================================="
 
@@ -28,7 +28,7 @@ kubectl cluster-info
 
 echo ""
 echo "[2/6] Namespace 생성..."
-kubectl create namespace petclinic --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace pocketbank --dry-run=client -o yaml | kubectl apply -f -
 
 echo ""
 echo "[3/6] MySQL Secret 생성..."
@@ -36,43 +36,43 @@ read -sp "MySQL Password: " DB_PASSWORD
 echo ""
 
 kubectl create secret generic db-credentials \
-  --from-literal=url="jdbc:mysql://${MYSQL_FQDN}:3306/petclinic" \
+  --from-literal=url="jdbc:mysql://${MYSQL_FQDN}:3306/pocketbank" \
   --from-literal=username="mysqladmin" \
   --from-literal=password="${DB_PASSWORD}" \
-  --namespace=petclinic \
+  --namespace=pocketbank \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo ""
-echo "[4/6] PetClinic Deployment 생성..."
+echo "[4/6] PocketBank Deployment 생성..."
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: petclinic-config
-  namespace: petclinic
+  name: pocketbank-config
+  namespace: pocketbank
 data:
   SPRING_PROFILES_ACTIVE: "mysql"
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: petclinic
-  namespace: petclinic
+  name: pocketbank
+  namespace: pocketbank
   labels:
-    app: petclinic
+    app: pocketbank
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: petclinic
+      app: pocketbank
   template:
     metadata:
       labels:
-        app: petclinic
+        app: pocketbank
     spec:
       containers:
-      - name: petclinic
-        image: springio/petclinic:latest
+      - name: pocketbank
+        image: springio/pocketbank:latest
         ports:
         - containerPort: 8080
           name: http
@@ -81,7 +81,7 @@ spec:
         - name: SPRING_PROFILES_ACTIVE
           valueFrom:
             configMapKeyRef:
-              name: petclinic-config
+              name: pocketbank-config
               key: SPRING_PROFILES_ACTIVE
         - name: SPRING_DATASOURCE_URL
           valueFrom:
@@ -137,14 +137,14 @@ cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Service
 metadata:
-  name: petclinic
-  namespace: petclinic
+  name: pocketbank
+  namespace: pocketbank
   labels:
-    app: petclinic
+    app: pocketbank
 spec:
   type: LoadBalancer
   selector:
-    app: petclinic
+    app: pocketbank
   ports:
   - name: http
     port: 8080
@@ -157,14 +157,14 @@ echo ""
 echo "[6/6] Pod 및 LoadBalancer IP 대기..."
 echo "Pod 시작 대기 중..."
 kubectl wait --for=condition=ready pod \
-  -l app=petclinic \
-  -n petclinic \
+  -l app=pocketbank \
+  -n pocketbank \
   --timeout=300s
 
 echo ""
 echo "LoadBalancer IP 할당 대기 중 (최대 3분)..."
 for i in {1..36}; do
-  EXTERNAL_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+  EXTERNAL_IP=$(kubectl get svc pocketbank -n pocketbank -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
   
   if [ -n "$EXTERNAL_IP" ]; then
     echo ""
@@ -179,17 +179,17 @@ done
 if [ -z "$EXTERNAL_IP" ]; then
   echo ""
   echo "WARNING: LoadBalancer IP가 할당되지 않았습니다."
-  echo "수동으로 확인하세요: kubectl get svc petclinic -n petclinic"
+  echo "수동으로 확인하세요: kubectl get svc pocketbank -n pocketbank"
 fi
 
 echo ""
 echo "=========================================="
-echo "PetClinic 배포 완료!"
+echo "PocketBank 배포 완료!"
 echo "=========================================="
 echo ""
-kubectl get pods -n petclinic
+kubectl get pods -n pocketbank
 echo ""
-kubectl get svc petclinic -n petclinic
+kubectl get svc pocketbank -n pocketbank
 echo ""
 echo "다음 단계:"
 echo "  ./update-appgw.sh  # Application Gateway 업데이트"

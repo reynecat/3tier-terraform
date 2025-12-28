@@ -139,7 +139,7 @@ kubectl delete secret db-credentials -n was
 export RDS_HOST=$(cd ~/3tier-terraform/codes/aws/service && terraform output -raw rds_address)
 
 kubectl create secret generic db-credentials \
-  --from-literal=url="jdbc:mysql://${RDS_HOST}:3306/petclinic" \
+  --from-literal=url="jdbc:mysql://${RDS_HOST}:3306/pocketbank" \
   --from-literal=username="admin" \
   --from-literal=password="MySecurePassword123!" \
   --namespace=was
@@ -277,7 +277,7 @@ az storage blob download \
 
 gunzip /tmp/backup.sql.gz
 
-mysql -h $(cd ~/3tier-terraform/codes/azure/2-failover && terraform output -raw mysql_fqdn) \
+mysql -h $(cd ~/3tier-terraform/codes/azure/2-emergency && terraform output -raw mysql_fqdn) \
   -u mysqladmin -p < /tmp/backup.sql
 ```
 
@@ -360,8 +360,8 @@ mysql -e "SELECT 1;"
 # 데이터베이스 목록
 mysql -h "$RDS_HOST" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "SHOW DATABASES;"
 
-# petclinic 데이터베이스 확인
-mysql -h "$RDS_HOST" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "USE petclinic; SHOW TABLES;"
+# pocketbank 데이터베이스 확인
+mysql -h "$RDS_HOST" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "USE pocketbank; SHOW TABLES;"
 ```
 
 ##### 4단계: 백업 스크립트 생성 (연결 성공 후)
@@ -415,7 +415,7 @@ echo "=========================================="
 
 # 환경 변수
 RDS_HOST="blue-rds.ciyiccb2k2z8.ap-northeast-2.rds.amazonaws.com"
-DB_NAME="petclinic"
+DB_NAME="pocketbank"
 DB_USERNAME="admin"
 DB_PASSWORD="byemyblue"
 AZURE_STORAGE_ACCOUNT="bloberry01"
@@ -963,7 +963,7 @@ kubectl logs -n was -l app=was-spring --tail=100
 # 에러 패턴 확인
 # "Access denied for user 'admin'@'xxx'" -> 비밀번호 문제
 # "Communications link failure" -> 네트워크 문제
-# "Unknown database 'petclinic'" -> 데이터베이스 없음
+# "Unknown database 'pocketbank'" -> 데이터베이스 없음
 ```
 
 **2단계: Secret 확인 및 재생성**
@@ -982,7 +982,7 @@ echo "RDS Host: $RDS_HOST"
 
 # Secret 재생성
 kubectl create secret generic db-credentials \
-  --from-literal=url="jdbc:mysql://${RDS_HOST}:3306/petclinic" \
+  --from-literal=url="jdbc:mysql://${RDS_HOST}:3306/pocketbank" \
   --from-literal=username="admin" \
   --from-literal=password="byemyblue" \
   --namespace=was
@@ -1244,7 +1244,7 @@ resource "aws_route53_health_check" "primary" {
   request_interval  = 30
   failure_threshold = 3
   measure_latency   = false
-  search_string     = "PetClinic"
+  search_string     = "PocketBank"
 }
 
 # Primary Health Check (올바른 설정)
@@ -1406,7 +1406,7 @@ when executing 'FLUSH TABLES WITH READ LOCK'
 # --skip-lock-tables와 --set-gtid-purged=OFF 추가
 mysqldump -h $RDS_HOST \
   -u admin -pbyemyblue \
-  --databases petclinic \
+  --databases pocketbank \
   --skip-lock-tables \
   --set-gtid-purged=OFF \
   --single-transaction \
@@ -1423,11 +1423,11 @@ mysqldump -h $RDS_HOST \
 
 # 수정 전
 mysqldump -h "$RDS_HOST" -u "$DB_USERNAME" -p"$DB_PASSWORD" \
-  --databases petclinic | gzip > "$BACKUP_FILE"
+  --databases pocketbank | gzip > "$BACKUP_FILE"
 
 # 수정 후
 mysqldump -h "$RDS_HOST" -u "$DB_USERNAME" -p"$DB_PASSWORD" \
-  --databases petclinic \
+  --databases pocketbank \
   --skip-lock-tables \
   --set-gtid-purged=OFF \
   --single-transaction \
@@ -1608,7 +1608,7 @@ a deprecated TLS version.
 
 #### 해결방법
 
-**codes/azure/2-failover/main.tf 수정**
+**codes/azure/2-emergency/main.tf 수정**
 ```hcl
 resource "azurerm_application_gateway" "main" {
   name                = "appgw-${var.environment}"
@@ -1669,7 +1669,7 @@ resource "azurerm_application_gateway" "main" {
 
 **2단계: Terraform 재적용**
 ```bash
-cd codes/azure/2-failover
+cd codes/azure/2-emergency
 terraform apply
 ```
 
@@ -1677,13 +1677,13 @@ terraform apply
 
 ---
 
-### 8.5 AKS PetClinic Pod CrashLoopBackOff (MySQL 연결 실패)
+### 8.5 AKS PocketBank Pod CrashLoopBackOff (MySQL 연결 실패)
 
 #### 증상
 ```bash
-kubectl get pods -n petclinic
+kubectl get pods -n pocketbank
 # NAME                         READY   STATUS             RESTARTS
-# petclinic-5974c78cd-c7dvf   0/1     CrashLoopBackOff   38
+# pocketbank-5974c78cd-c7dvf   0/1     CrashLoopBackOff   38
 ```
 
 #### 원인
@@ -1694,7 +1694,7 @@ kubectl get pods -n petclinic
 
 **1단계: Pod 로그 확인**
 ```bash
-kubectl logs petclinic-5974c78cd-c7dvf -n petclinic --tail=50
+kubectl logs pocketbank-5974c78cd-c7dvf -n pocketbank --tail=50
 
 # 오류 확인:
 # Caused by: com.mysql.cj.exceptions.CJCommunicationsException:
@@ -1732,21 +1732,21 @@ az mysql flexible-server firewall-rule create \
   --end-ip-address 20.249.162.115
 ```
 
-**4단계: PetClinic 재시작**
+**4단계: PocketBank 재시작**
 ```bash
-kubectl rollout restart deployment petclinic -n petclinic
+kubectl rollout restart deployment pocketbank -n pocketbank
 
 # Pod 상태 확인
-kubectl get pods -n petclinic -w
+kubectl get pods -n pocketbank -w
 ```
 
 **5단계: 연결 확인**
 ```bash
 # Pod 로그에서 성공 메시지 확인
-kubectl logs -f deployment/petclinic -n petclinic | grep "Started"
+kubectl logs -f deployment/pocketbank -n pocketbank | grep "Started"
 
 # 출력 예시:
-# Started PetClinicApplication in 16.159 seconds
+# Started PocketBankApplication in 16.159 seconds
 ```
 
 ---
@@ -1951,14 +1951,14 @@ backend_address_pool {
 
 ```hcl
 # AKS Service 정보를 data source로 가져오기
-data "kubernetes_service" "petclinic" {
+data "kubernetes_service" "pocketbank" {
   metadata {
-    name      = "petclinic"
-    namespace = "petclinic"
+    name      = "pocketbank"
+    namespace = "pocketbank"
   }
 
   depends_on = [
-    kubernetes_service.petclinic
+    kubernetes_service.pocketbank
   ]
 }
 
@@ -1969,7 +1969,7 @@ resource "azurerm_application_gateway" "main" {
   backend_address_pool {
     name         = local.backend_address_pool_name
     ip_addresses = [
-      data.kubernetes_service.petclinic.status[0].load_balancer[0].ingress[0].ip
+      data.kubernetes_service.pocketbank.status[0].load_balancer[0].ingress[0].ip
     ]
   }
 }
@@ -1982,7 +1982,7 @@ resource "azurerm_application_gateway" "main" {
 # update-appgw-backend.sh
 
 # AKS LoadBalancer IP 조회
-AKS_LB_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+AKS_LB_IP=$(kubectl get svc pocketbank -n pocketbank -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
 # Application Gateway Backend Pool 업데이트
 az network application-gateway address-pool update \
@@ -1999,12 +1999,12 @@ echo "Backend updated to: $AKS_LB_IP"
 ```hcl
 resource "null_resource" "update_appgw_backend" {
   triggers = {
-    petclinic_service = kubernetes_service.petclinic.id
+    pocketbank_service = kubernetes_service.pocketbank.id
   }
 
   provisioner "local-exec" {
     command = <<-EOT
-      LB_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+      LB_IP=$(kubectl get svc pocketbank -n pocketbank -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
       az network application-gateway address-pool update \
         -g rg-dr-blue \
         --gateway-name appgw-blue \
@@ -2014,7 +2014,7 @@ resource "null_resource" "update_appgw_backend" {
   }
 
   depends_on = [
-    kubernetes_service.petclinic,
+    kubernetes_service.pocketbank,
     azurerm_application_gateway.main
   ]
 }
@@ -2314,6 +2314,344 @@ desiredSize: 2
 
 ---
 
-**문서 버전**: v1.5
-**최종 수정**: 2025-12-24
+## 10. DockerHub 마이그레이션 및 배포 관련 문제 (2025-12-28)
+
+### 10.1 Docker 이미지 빌드 및 푸시
+
+#### 작업 내용
+- ECR/ACR에서 DockerHub로 컨테이너 레지스트리 마이그레이션
+- DockerHub 계정: cloud039
+- 레포지토리: pocketbank-web, pocketbank-was
+
+#### Docker 권한 문제
+
+**증상**
+```bash
+docker build -t cloud039/pocketbank-web:latest .
+# permission denied while trying to connect to the Docker daemon socket
+```
+
+**해결방법**
+```bash
+sudo chmod 666 /var/run/docker.sock
+```
+
+### 10.2 EBS CSI Driver 설치 및 IAM 권한 문제
+
+#### 증상
+```bash
+kubectl get pods -n kube-system | grep ebs-csi-controller
+# ebs-csi-controller-xxx   1/6     CrashLoopBackOff
+```
+
+**로그**
+```
+Failed health check: dry-run EC2 API call failed:
+no EC2 IMDS role found, operation error ec2imds
+```
+
+#### 원인
+- EBS CSI Driver가 EBS 볼륨을 생성/연결할 IAM 권한 부족
+- ServiceAccount에 IAM Role이 annotate되지 않음
+
+#### 해결방법
+
+**1단계: IAM Role 생성**
+```bash
+# OIDC Issuer URL 확인
+OIDC_URL=$(aws eks describe-cluster --name blue-eks --region ap-northeast-2 \
+  --query "cluster.identity.oidc.issuer" --output text)
+
+# Trust Policy 생성
+cat > /tmp/ebs-csi-trust-policy.json <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "Federated": "arn:aws:iam::ACCOUNT_ID:oidc-provider/${OIDC_URL#https://}"
+    },
+    "Action": "sts:AssumeRoleWithWebIdentity",
+    "Condition": {
+      "StringEquals": {
+        "${OIDC_URL#https://}:aud": "sts.amazonaws.com",
+        "${OIDC_URL#https://}:sub": "system:serviceaccount:kube-system:ebs-csi-controller-sa"
+      }
+    }
+  }]
+}
+EOF
+
+# IAM Role 생성
+aws iam create-role \
+  --role-name AmazonEKS_EBS_CSI_DriverRole_blue \
+  --assume-role-policy-document file:///tmp/ebs-csi-trust-policy.json
+
+# Policy 연결
+aws iam attach-role-policy \
+  --role-name AmazonEKS_EBS_CSI_DriverRole_blue \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy
+```
+
+**2단계: ServiceAccount Annotate**
+```bash
+kubectl annotate serviceaccount ebs-csi-controller-sa \
+  -n kube-system \
+  eks.amazonaws.com/role-arn=arn:aws:iam::ACCOUNT_ID:role/AmazonEKS_EBS_CSI_DriverRole_blue \
+  --overwrite
+
+# Deployment 재시작
+kubectl rollout restart deployment ebs-csi-controller -n kube-system
+```
+
+### 10.3 WAS Pod CrashLoopBackOff - RDS 연결 실패
+
+#### 증상
+```bash
+kubectl logs was-spring-xxx -n was
+# Access denied for user 'admin'@'10.0.22.108' (using password: YES)
+```
+
+#### 원인 1: 잘못된 비밀번호
+
+Secret에 잘못된 비밀번호(`pocketbank123!`) 사용, 실제 비밀번호는 `byemyblue`
+
+**해결방법**
+```bash
+# Secret 확인
+kubectl get secret db-credentials -n was -o yaml
+
+# Secret 재생성
+kubectl delete secret db-credentials -n was
+
+kubectl create secret generic db-credentials \
+  --from-literal=url=jdbc:mysql://RDS_HOST:3306/pocketbank \
+  --from-literal=username=admin \
+  --from-literal=password=byemyblue \
+  -n was
+```
+
+#### 원인 2: RDS 보안 그룹이 WAS 서브넷 차단
+
+WAS Pod IP가 10.0.21.0/24, 10.0.22.0/24인데 RDS 보안 그룹에 이 CIDR 미허용
+
+**해결방법**
+```bash
+# RDS 보안 그룹에 WAS 서브넷 추가
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-0b289d03cf95e02e3 \
+  --protocol tcp \
+  --port 3306 \
+  --cidr 10.0.21.0/24
+
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-0b289d03cf95e02e3 \
+  --protocol tcp \
+  --port 3306 \
+  --cidr 10.0.22.0/24
+```
+
+### 10.4 WAS Pod Readiness Probe 실패
+
+#### 증상
+```bash
+kubectl get pods -n was
+# was-spring-xxx   0/1     Running   0   5m
+```
+
+Pod이 Running이지만 Ready 상태로 전환되지 않음
+
+#### 원인
+Readiness Probe가 `/` 경로를 확인하는데, Spring Boot Actuator는 `/actuator/health`를 사용
+
+#### 해결방법
+
+**deployment.yaml 수정**
+```yaml
+# 수정 전
+readinessProbe:
+  httpGet:
+    path: /
+    port: 8080
+
+# 수정 후
+readinessProbe:
+  httpGet:
+    path: /actuator/health
+    port: 8080
+```
+
+### 10.5 Nginx ConfigMap vs Docker 이미지 설정 충돌
+
+#### 증상
+ALB를 통해 접속하면 404 반환
+
+#### 원인
+- ConfigMap을 `/etc/nginx/conf.d/default.conf`에 마운트
+- 실제 Docker 이미지의 nginx.conf는 `/etc/nginx/conf.d/nginx.conf`에 위치
+- ConfigMap이 올바르게 적용되지 않음
+
+#### 해결방법
+
+**방법 1: ConfigMap 마운트 경로 수정**
+```yaml
+volumeMounts:
+- name: nginx-config
+  mountPath: /etc/nginx/conf.d/nginx.conf  # default.conf → nginx.conf
+  subPath: default.conf
+```
+
+**방법 2: ConfigMap 마운트 제거 (채택)**
+- Docker 이미지 내부의 nginx.conf를 직접 사용
+- 이미지 빌드 시 nginx.conf 업데이트
+
+```yaml
+# volumeMounts 섹션 제거
+# volumes 섹션 제거
+```
+
+### 10.6 Nginx 이미지 내 WAS 서비스 이름 오류
+
+#### 증상
+```
+nginx: [emerg] host not found in upstream "pocketbank-was"
+```
+
+#### 원인
+Docker 이미지의 nginx.conf가 `pocketbank-was`를 참조하지만 실제 서비스 이름은 `was-service.was.svc.cluster.local`
+
+#### 해결방법
+
+**nginx.conf 수정**
+```nginx
+# 수정 전
+location /api/ {
+  proxy_pass http://pocketbank-was:8080/api/;
+}
+
+# 수정 후
+location /api/ {
+  proxy_pass http://was-service.was.svc.cluster.local:8080/api/;
+}
+```
+
+**Docker 이미지 재빌드**
+```bash
+cd ~/spring-pocketbank/web
+docker build -t cloud039/pocketbank-web:latest .
+docker push cloud039/pocketbank-web:latest
+
+# Deployment 재시작
+kubectl rollout restart deployment web-nginx -n web
+```
+
+### 10.7 WAS Pod 메모리 부족 (Pending)
+
+#### 증상
+```bash
+kubectl describe pod was-spring-xxx -n was
+# 0/4 nodes are available: 2 Insufficient memory
+```
+
+#### 원인
+WAS Pod이 512Mi 메모리 요청, t3.small 노드(2GB)에 다른 Pod들로 인해 공간 부족
+
+#### 해결방법
+
+**리소스 요청 감소**
+```yaml
+# 수정 전
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# 수정 후
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+```
+
+### 10.8 CloudFront Default Target이 Azure로 설정됨
+
+#### 증상
+```bash
+curl https://blueisthenewblack.store
+# HTTP/2 504
+```
+
+CloudFront 배포 완료 후에도 504 Gateway Timeout
+
+#### 원인
+```bash
+aws cloudfront get-distribution --id E2OX3Z0XHNDUN \
+  --query 'Distribution.DistributionConfig.DefaultCacheBehavior.TargetOriginId'
+# "secondary-azure"
+```
+
+DefaultCacheBehavior가 `secondary-azure`를 가리킴 (Azure Application Gateway)
+
+#### 해결방법
+
+**CloudFront Origin 변경**
+```bash
+# 설정 가져오기
+aws cloudfront get-distribution-config --id E2OX3Z0XHNDUN > /tmp/cf-config.json
+
+# TargetOriginId 변경
+jq '.DistributionConfig.DefaultCacheBehavior.TargetOriginId = "primary-aws-alb"' \
+  /tmp/cf-config.json > /tmp/cf-updated.json
+
+# 적용
+ETAG=$(jq -r '.ETag' /tmp/cf-config.json)
+aws cloudfront update-distribution \
+  --id E2OX3Z0XHNDUN \
+  --distribution-config file:///tmp/cf-updated.json \
+  --if-match "$ETAG"
+```
+
+### 10.9 전체 배포 플로우 요약
+
+#### 성공적인 배포 순서
+
+1. **Docker 이미지 빌드 및 푸시** → DockerHub
+2. **AWS Load Balancer Controller 설치** → IAM Role + ServiceAccount
+3. **EBS CSI Driver 설치** → PVC 생성 가능
+4. **DB Secret 생성** → 올바른 비밀번호 사용
+5. **RDS 보안 그룹 업데이트** → WAS 서브넷 허용
+6. **WAS Deployment 배포** → Health Check 경로 수정
+7. **Web Deployment 배포** → ConfigMap 제거, Docker 이미지 사용
+8. **Ingress 생성** → ALB 자동 프로비저닝
+9. **CloudFront Origin 업데이트** → ALB DNS로 변경
+10. **CloudFront Target 수정** → primary-aws-alb로 설정
+
+#### 최종 확인 사항
+
+```bash
+# 1. Pod 상태 확인
+kubectl get pods -n web
+kubectl get pods -n was
+
+# 2. ALB 확인
+kubectl get ingress -n web
+curl -I http://ALB_DNS/
+
+# 3. CloudFront 확인
+aws cloudfront get-distribution --id DIST_ID --query 'Distribution.Status'
+
+# 4. 도메인 접속 확인
+curl -I https://blueisthenewblack.store/
+```
+
+---
+
+**문서 버전**: v1.6
+**최종 수정**: 2025-12-28
 **작성자**: I2ST-blue

@@ -11,7 +11,7 @@
 User → blueisthenewblack.store (Route53)
      → CloudFront Distribution
      → Primary Origin: AWS ALB (Korea ap-northeast-2)
-     → AWS EKS PetClinic
+     → AWS EKS PocketBank
 ```
 
 ### 단기 장애 (Short-term Failure)
@@ -31,12 +31,12 @@ User → blueisthenewblack.store
      → Primary Origin: AWS ALB (5xx Error)
      → [Manual Switch to App Gateway]
      → Secondary Origin: Azure Application Gateway
-     → Azure AKS PetClinic (완전한 서비스)
+     → Azure AKS PocketBank (완전한 서비스)
 ```
 
 ---
 
-## 1단계: Azure 2-failover 인프라 배포
+## 1단계: Azure 2-emergency 인프라 배포
 
 ### 1.1 배포 전 확인사항
 
@@ -45,7 +45,7 @@ User → blueisthenewblack.store
 az account show
 
 # Terraform 디렉토리 이동
-cd /home/ubuntu/3tier-terraform/codes/azure/2-failover
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
 ```
 
 ### 1.2 terraform.tfvars 확인
@@ -78,7 +78,7 @@ terraform apply -auto-approve
 
 ### 1.4 배포되는 리소스
 
-- **Azure MySQL Flexible Server**: PetClinic 데이터베이스
+- **Azure MySQL Flexible Server**: PocketBank 데이터베이스
 - **Azure AKS Cluster**: Kubernetes 클러스터 (2-4 노드)
 - **Application Gateway**: CloudFront Secondary Origin용 엔드포인트
 - **Public IP**: Application Gateway용 고정 IP
@@ -97,22 +97,22 @@ cd /home/ubuntu/3tier-terraform/codes/aws/service
 # RDS 스냅샷 생성
 aws rds create-db-snapshot \
   --db-instance-identifier $(terraform output -raw rds_instance_id) \
-  --db-snapshot-identifier petclinic-final-backup-$(date +%Y%m%d-%H%M%S) \
+  --db-snapshot-identifier pocketbank-final-backup-$(date +%Y%m%d-%H%M%S) \
   --region ap-northeast-2
 
 # S3로 백업 (mysqldump 방식)
-kubectl exec -n petclinic deploy/petclinic -- \
+kubectl exec -n pocketbank deploy/pocketbank -- \
   mysqldump -h $(terraform output -raw rds_endpoint | cut -d: -f1) \
-  -u admin -p${DB_PASSWORD} petclinic > /tmp/petclinic-backup.sql
+  -u admin -p${DB_PASSWORD} pocketbank > /tmp/pocketbank-backup.sql
 
 # S3 업로드
-aws s3 cp /tmp/petclinic-backup.sql s3://your-backup-bucket/petclinic-backup.sql
+aws s3 cp /tmp/pocketbank-backup.sql s3://your-backup-bucket/pocketbank-backup.sql
 ```
 
 ### 2.2 Azure MySQL로 데이터 복구
 
 ```bash
-cd /home/ubuntu/3tier-terraform/codes/azure/2-failover
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
 
 # Azure MySQL 엔드포인트 확인
 AZURE_MYSQL_HOST=$(terraform output -raw mysql_fqdn)
@@ -128,12 +128,12 @@ az mysql flexible-server firewall-rule create \
   --end-ip-address $MY_IP
 
 # 데이터 복구 (S3에서 다운로드 후)
-aws s3 cp s3://your-backup-bucket/petclinic-backup.sql /tmp/petclinic-backup.sql
+aws s3 cp s3://your-backup-bucket/pocketbank-backup.sql /tmp/pocketbank-backup.sql
 
 mysql -h $AZURE_MYSQL_HOST \
   -u $AZURE_MYSQL_USER \
   -p${DB_PASSWORD} \
-  petclinic < /tmp/petclinic-backup.sql
+  pocketbank < /tmp/pocketbank-backup.sql
 ```
 
 **대안: 정기 백업 사용**
@@ -145,34 +145,34 @@ mysql -h $AZURE_MYSQL_HOST \
 az storage blob list \
   --account-name bloberry01 \
   --container-name backups \
-  --prefix petclinic- \
+  --prefix pocketbank- \
   --query "sort_by([].{name:name, lastModified:properties.lastModified}, &lastModified)[-1]"
 
 # 백업 다운로드
 LATEST_BACKUP=$(az storage blob list \
   --account-name bloberry01 \
   --container-name backups \
-  --prefix petclinic- \
+  --prefix pocketbank- \
   --query "sort_by([].name, &[-1])" -o tsv | tail -1)
 
 az storage blob download \
   --account-name bloberry01 \
   --container-name backups \
   --name $LATEST_BACKUP \
-  --file /tmp/petclinic-backup.sql
+  --file /tmp/pocketbank-backup.sql
 
 # 데이터 복구
-mysql -h $AZURE_MYSQL_HOST -u $AZURE_MYSQL_USER -p${DB_PASSWORD} petclinic < /tmp/petclinic-backup.sql
+mysql -h $AZURE_MYSQL_HOST -u $AZURE_MYSQL_USER -p${DB_PASSWORD} pocketbank < /tmp/pocketbank-backup.sql
 ```
 
 ---
 
-## 3단계: Azure AKS에 PetClinic 배포
+## 3단계: Azure AKS에 PocketBank 배포
 
 ### 3.1 AKS 자격증명 구성
 
 ```bash
-cd /home/ubuntu/3tier-terraform/codes/azure/2-failover
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
 
 # AKS 자격증명 가져오기
 az aks get-credentials \
@@ -187,43 +187,43 @@ kubectl config use-context $(terraform output -raw aks_cluster_name)
 kubectl get nodes
 ```
 
-### 3.2 PetClinic 배포
+### 3.2 PocketBank 배포
 
 ```bash
 # Namespace 생성
-kubectl create namespace petclinic
+kubectl create namespace pocketbank
 
 # MySQL 연결 정보를 ConfigMap으로 생성
-kubectl create configmap petclinic-config -n petclinic \
+kubectl create configmap pocketbank-config -n pocketbank \
   --from-literal=MYSQL_HOST=$(terraform output -raw mysql_fqdn) \
   --from-literal=MYSQL_PORT=3306 \
   --from-literal=MYSQL_DATABASE=$(terraform output -raw mysql_database_name)
 
 # MySQL 비밀번호를 Secret으로 생성
-kubectl create secret generic petclinic-secret -n petclinic \
+kubectl create secret generic pocketbank-secret -n pocketbank \
   --from-literal=MYSQL_USER=$(terraform output -raw mysql_admin_username) \
   --from-literal=MYSQL_PASSWORD=${DB_PASSWORD}
 
-# PetClinic Deployment 생성
+# PocketBank Deployment 생성
 cat <<EOF | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: petclinic
-  namespace: petclinic
+  name: pocketbank
+  namespace: pocketbank
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: petclinic
+      app: pocketbank
   template:
     metadata:
       labels:
-        app: petclinic
+        app: pocketbank
     spec:
       containers:
-      - name: petclinic
-        image: springcommunity/spring-petclinic:latest
+      - name: pocketbank
+        image: springcommunity/spring-pocketbank:latest
         ports:
         - containerPort: 8080
         env:
@@ -234,16 +234,16 @@ spec:
         - name: SPRING_DATASOURCE_USERNAME
           valueFrom:
             secretKeyRef:
-              name: petclinic-secret
+              name: pocketbank-secret
               key: MYSQL_USER
         - name: SPRING_DATASOURCE_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: petclinic-secret
+              name: pocketbank-secret
               key: MYSQL_PASSWORD
         envFrom:
         - configMapRef:
-            name: petclinic-config
+            name: pocketbank-config
         resources:
           requests:
             memory: "512Mi"
@@ -270,20 +270,20 @@ cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Service
 metadata:
-  name: petclinic
-  namespace: petclinic
+  name: pocketbank
+  namespace: pocketbank
 spec:
   type: ClusterIP
   selector:
-    app: petclinic
+    app: pocketbank
   ports:
   - port: 80
     targetPort: 8080
 EOF
 
 # 배포 상태 확인
-kubectl rollout status deployment/petclinic -n petclinic
-kubectl get pods -n petclinic
+kubectl rollout status deployment/pocketbank -n pocketbank
+kubectl get pods -n pocketbank
 ```
 
 ---
@@ -293,15 +293,15 @@ kubectl get pods -n petclinic
 ### 4.1 AKS Service의 Private IP 확인
 
 ```bash
-# PetClinic Service의 ClusterIP 확인
-PETCLINIC_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.spec.clusterIP}')
-echo "PetClinic ClusterIP: $PETCLINIC_IP"
+# PocketBank Service의 ClusterIP 확인
+PETCLINIC_IP=$(kubectl get svc pocketbank -n pocketbank -o jsonpath='{.spec.clusterIP}')
+echo "PocketBank ClusterIP: $PETCLINIC_IP"
 ```
 
 ### 4.2 Application Gateway Backend Pool 업데이트
 
 ```bash
-cd /home/ubuntu/3tier-terraform/codes/azure/2-failover
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
 
 # Application Gateway 이름 확인
 APPGW_NAME=$(terraform output -raw appgw_name)
@@ -344,8 +344,8 @@ echo "Application Gateway IP: $APPGW_PUBLIC_IP"
 # HTTP 테스트
 curl -I http://$APPGW_PUBLIC_IP
 
-# 정상 응답 확인 (200 OK 및 PetClinic HTML)
-curl http://$APPGW_PUBLIC_IP | grep -i "petclinic"
+# 정상 응답 확인 (200 OK 및 PocketBank HTML)
+curl http://$APPGW_PUBLIC_IP | grep -i "pocketbank"
 ```
 
 ---
@@ -369,7 +369,7 @@ aws cloudfront get-distribution-config \
 
 ```bash
 # Application Gateway Public IP 가져오기
-cd /home/ubuntu/3tier-terraform/codes/azure/2-failover
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
 APPGW_IP=$(terraform output -raw appgw_public_ip)
 
 # CloudFront 설정 업데이트
@@ -430,7 +430,7 @@ done
 
 ```bash
 # 도메인으로 접속 테스트
-curl -L https://blueisthenewblack.store | grep -i "petclinic"
+curl -L https://blueisthenewblack.store | grep -i "pocketbank"
 
 # 응답 헤더 확인
 curl -I https://blueisthenewblack.store
@@ -438,7 +438,7 @@ curl -I https://blueisthenewblack.store
 
 **예상 결과:**
 - Status: 200 OK
-- PetClinic HTML 응답
+- PocketBank HTML 응답
 - Server: CloudFront
 
 ### 6.2 CloudFront 캐시 무효화 (필요 시)
@@ -454,7 +454,7 @@ aws cloudfront create-invalidation \
 
 브라우저에서 접속하여 확인:
 1. `https://blueisthenewblack.store` 접속
-2. PetClinic 홈페이지 정상 표시 확인
+2. PocketBank 홈페이지 정상 표시 확인
 3. "Find Owners" 메뉴에서 데이터 조회 확인 (DB 연결 확인)
 4. 새 Owner 추가 테스트 (DB 쓰기 확인)
 
@@ -539,7 +539,7 @@ curl -I https://blueisthenewblack.store
 **해결**:
 ```bash
 # AKS Service ClusterIP 재확인
-kubectl get svc petclinic -n petclinic
+kubectl get svc pocketbank -n pocketbank
 
 # Backend Pool 재설정
 az network application-gateway address-pool update \
@@ -576,9 +576,9 @@ az mysql flexible-server firewall-rule create \
 
 ### 정상 운영 → 장기 DR 전환 체크리스트
 
-- [ ] Azure 2-failover 배포 완료
+- [ ] Azure 2-emergency 배포 완료
 - [ ] Azure MySQL 데이터 복구 완료
-- [ ] Azure AKS PetClinic 배포 완료
+- [ ] Azure AKS PocketBank 배포 완료
 - [ ] Application Gateway → AKS 연결 완료
 - [ ] Application Gateway HTTP 테스트 성공
 - [ ] CloudFront Secondary Origin을 App Gateway로 변경

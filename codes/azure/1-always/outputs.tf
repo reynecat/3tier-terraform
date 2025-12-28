@@ -62,9 +62,9 @@ output "db_subnet_id" {
   value       = azurerm_subnet.db.id
 }
 
-output "aks_subnet_id" {
-  description = "AKS Subnet ID"
-  value       = azurerm_subnet.aks.id
+output "appgw_subnet_id" {
+  description = "Application Gateway Subnet ID"
+  value       = azurerm_subnet.appgw.id
 }
 
 output "route53_subdomain" {
@@ -100,10 +100,10 @@ output "deployment_summary" {
 
   네트워크 (예약됨):
     - VNet: ${azurerm_virtual_network.main.name} (${var.vnet_cidr})
+    - AppGW Subnet: ${azurerm_subnet.appgw.name}
     - Web Subnet: ${azurerm_subnet.web.name}
     - WAS Subnet: ${azurerm_subnet.was.name}
     - DB Subnet: ${azurerm_subnet.db.name}
-    - AKS Subnet: ${azurerm_subnet.aks.name}
 
   점검 페이지 확인:
     curl https://${azurerm_storage_account.backups.name}.z12.web.core.windows.net/

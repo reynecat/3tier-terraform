@@ -1,5 +1,5 @@
 # GitOps Repository Structure
-# petclinic-gitops/
+# pocketbank-gitops/
 #
 # ├── base/
 # │   ├── kustomization.yaml
@@ -29,7 +29,7 @@
 # │       └── patches/
 # │
 # └── charts/
-#     └── petclinic/
+#     └── pocketbank/
 #         ├── Chart.yaml
 #         ├── values.yaml
 #         └── templates/
@@ -40,7 +40,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: petclinic-base
+  name: pocketbank-base
 
 resources:
   - namespace.yaml
@@ -51,7 +51,7 @@ resources:
   - hpa.yaml
 
 commonLabels:
-  app: petclinic
+  app: pocketbank
   managed-by: argocd
 
 ---
@@ -59,35 +59,35 @@ commonLabels:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: petclinic
+  name: pocketbank
   labels:
-    app: petclinic
+    app: pocketbank
 
 ---
 # base/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: petclinic
-  namespace: petclinic
+  name: pocketbank
+  namespace: pocketbank
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: petclinic
+      app: pocketbank
   template:
     metadata:
       labels:
-        app: petclinic
+        app: pocketbank
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8080"
         prometheus.io/path: "/actuator/prometheus"
     spec:
-      serviceAccountName: petclinic
+      serviceAccountName: pocketbank
       containers:
-        - name: petclinic
-          image: petclinic:latest  # kustomize로 오버라이드
+        - name: pocketbank
+          image: pocketbank:latest  # kustomize로 오버라이드
           ports:
             - containerPort: 8080
               name: http
@@ -95,22 +95,22 @@ spec:
             - name: SPRING_PROFILES_ACTIVE
               valueFrom:
                 configMapKeyRef:
-                  name: petclinic-config
+                  name: pocketbank-config
                   key: spring.profiles.active
             - name: SPRING_DATASOURCE_URL
               valueFrom:
                 secretKeyRef:
-                  name: petclinic-db-secret
+                  name: pocketbank-db-secret
                   key: url
             - name: SPRING_DATASOURCE_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: petclinic-db-secret
+                  name: pocketbank-db-secret
                   key: username
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: petclinic-db-secret
+                  name: pocketbank-db-secret
                   key: password
           resources:
             requests:
@@ -142,7 +142,7 @@ spec:
               podAffinityTerm:
                 labelSelector:
                   matchLabels:
-                    app: petclinic
+                    app: pocketbank
                 topologyKey: kubernetes.io/hostname
 
 ---
@@ -150,8 +150,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: petclinic
-  namespace: petclinic
+  name: pocketbank
+  namespace: pocketbank
 spec:
   type: ClusterIP
   ports:
@@ -160,20 +160,20 @@ spec:
       protocol: TCP
       name: http
   selector:
-    app: petclinic
+    app: pocketbank
 
 ---
 # base/hpa.yaml
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: petclinic
-  namespace: petclinic
+  name: pocketbank
+  namespace: pocketbank
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: petclinic
+    name: pocketbank
   minReplicas: 2
   maxReplicas: 10
   metrics:
@@ -195,7 +195,7 @@ spec:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: petclinic
+namespace: pocketbank
 
 resources:
   - ../../base
@@ -208,8 +208,8 @@ commonLabels:
   cloud: aws
 
 images:
-  - name: petclinic
-    newName: ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/petclinic
+  - name: pocketbank
+    newName: ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com/pocketbank
     newTag: latest
 
 patches:
@@ -217,20 +217,20 @@ patches:
   - path: patches/ingress-patch.yaml
 
 configMapGenerator:
-  - name: petclinic-config
+  - name: pocketbank-config
     behavior: merge
     literals:
       - spring.profiles.active=prod,mysql
 
 secretGenerator:
-  - name: petclinic-db-secret
+  - name: pocketbank-db-secret
     type: Opaque
     literals:
-      - url=jdbc:mysql://petclinic-db.cluster-xxx.ap-northeast-2.rds.amazonaws.com:3306/petclinic
+      - url=jdbc:mysql://pocketbank-db.cluster-xxx.ap-northeast-2.rds.amazonaws.com:3306/pocketbank
     # username, password는 sealed-secrets로 관리
 
 replicas:
-  - name: petclinic
+  - name: pocketbank
     count: 3
 
 ---
@@ -238,7 +238,7 @@ replicas:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: petclinic
+  name: pocketbank
 spec:
   template:
     spec:
@@ -250,7 +250,7 @@ spec:
           value: "was"
           effect: "NoSchedule"
       containers:
-        - name: petclinic
+        - name: pocketbank
           resources:
             requests:
               cpu: 500m
@@ -264,7 +264,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: petclinic
+  name: pocketbank
   annotations:
     kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
@@ -275,13 +275,13 @@ metadata:
     alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
 spec:
   rules:
-    - host: petclinic.example.com
+    - host: pocketbank.example.com
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: petclinic
+                name: pocketbank
                 port:
                   number: 80

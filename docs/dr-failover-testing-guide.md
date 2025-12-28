@@ -5,7 +5,7 @@
 이 문서는 실제 DR 시나리오를 테스트하는 절차를 상세히 설명합니다. 3단계로 구성됩니다:
 
 1. **Phase 1**: AWS Web Pod를 0으로 스케일링 → Blob Storage 정적 페이지로 자동 failover
-2. **Phase 2**: 장애 장기화 가정 → Azure 2-failover 배포 → Application Gateway로 트래픽 전환
+2. **Phase 2**: 장애 장기화 가정 → Azure 2-emergency 배포 → Application Gateway로 트래픽 전환
 3. **Phase 3**: AWS 복구 → Azure 인프라 정리 → Blob Storage secondary origin 원복
 
 ---
@@ -163,19 +163,19 @@ curl -I https://bloberry01.z12.web.core.windows.net/
 
 **브라우저에서 확인:**
 1. `https://blueisthenewblack.store` 접속
-2. 정적 유지보수 페이지 표시 확인 (PetClinic이 아닌 정적 HTML)
+2. 정적 유지보수 페이지 표시 확인 (PocketBank이 아닌 정적 HTML)
 
 ---
 
 ## Phase 2: 장기 장애 대응 (Azure Application Gateway로 전환)
 
 ### 목표
-장애가 장기화되었다고 가정하고, Azure 2-failover 인프라를 배포하여 완전한 PetClinic 서비스를 Azure에서 제공
+장애가 장기화되었다고 가정하고, Azure 2-emergency 인프라를 배포하여 완전한 PocketBank 서비스를 Azure에서 제공
 
-### 2.1 Azure 2-failover 인프라 배포
+### 2.1 Azure 2-emergency 인프라 배포
 
 ```bash
-cd /home/ubuntu/3tier-terraform/codes/azure/2-failover
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
 
 # Terraform 초기화 (처음 한 번만)
 terraform init
@@ -191,7 +191,7 @@ terraform output
 ```
 
 **배포되는 리소스:**
-- Azure MySQL Flexible Server (PetClinic DB)
+- Azure MySQL Flexible Server (PocketBank DB)
 - Azure AKS Cluster (Kubernetes)
 - Application Gateway (External Load Balancer)
 - Public IP (Application Gateway용)
@@ -205,7 +205,7 @@ terraform output
 LATEST_BACKUP=$(az storage blob list \
   --account-name bloberry01 \
   --container-name backups \
-  --prefix petclinic- \
+  --prefix pocketbank- \
   --query "sort_by([].{name:name, lastModified:properties.lastModified}, &lastModified)[-1].name" \
   --output tsv)
 
@@ -216,10 +216,10 @@ az storage blob download \
   --account-name bloberry01 \
   --container-name backups \
   --name "$LATEST_BACKUP" \
-  --file /tmp/petclinic-backup.sql
+  --file /tmp/pocketbank-backup.sql
 
 # 3. Azure MySQL 접속 정보 확인
-cd /home/ubuntu/3tier-terraform/codes/azure/2-failover
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
 AZURE_MYSQL_HOST=$(terraform output -raw mysql_fqdn)
 AZURE_MYSQL_USER=$(terraform output -raw mysql_admin_username)
 AZURE_MYSQL_DB=$(terraform output -raw mysql_database_name)
@@ -237,17 +237,17 @@ az mysql flexible-server firewall-rule create \
 mysql -h $AZURE_MYSQL_HOST \
   -u $AZURE_MYSQL_USER \
   -p \
-  $AZURE_MYSQL_DB < /tmp/petclinic-backup.sql
+  $AZURE_MYSQL_DB < /tmp/pocketbank-backup.sql
 
 # 복구 확인
 mysql -h $AZURE_MYSQL_HOST -u $AZURE_MYSQL_USER -p -e "USE $AZURE_MYSQL_DB; SHOW TABLES;"
 ```
 
-### 2.3 Azure AKS에 PetClinic 배포
+### 2.3 Azure AKS에 PocketBank 배포
 
 ```bash
 # 1. AKS 자격증명 구성
-cd /home/ubuntu/3tier-terraform/codes/azure/2-failover
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
 
 az aks get-credentials \
   --resource-group rg-blue \
@@ -261,14 +261,14 @@ kubectl config current-context
 kubectl get nodes
 
 # 2. Namespace 생성
-kubectl create namespace petclinic
+kubectl create namespace pocketbank
 
 # 3. ConfigMap 및 Secret 생성
 AZURE_MYSQL_HOST=$(terraform output -raw mysql_fqdn)
 AZURE_MYSQL_DB=$(terraform output -raw mysql_database_name)
 AZURE_MYSQL_USER=$(terraform output -raw mysql_admin_username)
 
-kubectl create configmap petclinic-config -n petclinic \
+kubectl create configmap pocketbank-config -n pocketbank \
   --from-literal=MYSQL_HOST=$AZURE_MYSQL_HOST \
   --from-literal=MYSQL_PORT=3306 \
   --from-literal=MYSQL_DATABASE=$AZURE_MYSQL_DB
@@ -277,30 +277,30 @@ kubectl create configmap petclinic-config -n petclinic \
 read -sp "Enter MySQL password: " MYSQL_PASSWORD
 echo
 
-kubectl create secret generic petclinic-secret -n petclinic \
+kubectl create secret generic pocketbank-secret -n pocketbank \
   --from-literal=MYSQL_USER=$AZURE_MYSQL_USER \
   --from-literal=MYSQL_PASSWORD=$MYSQL_PASSWORD
 
-# 4. PetClinic Deployment 배포
+# 4. PocketBank Deployment 배포
 cat <<'EOF' | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: petclinic
-  namespace: petclinic
+  name: pocketbank
+  namespace: pocketbank
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: petclinic
+      app: pocketbank
   template:
     metadata:
       labels:
-        app: petclinic
+        app: pocketbank
     spec:
       containers:
-      - name: petclinic
-        image: springcommunity/spring-petclinic:latest
+      - name: pocketbank
+        image: springcommunity/spring-pocketbank:latest
         ports:
         - containerPort: 8080
         env:
@@ -309,29 +309,29 @@ spec:
         - name: MYSQL_HOST
           valueFrom:
             configMapKeyRef:
-              name: petclinic-config
+              name: pocketbank-config
               key: MYSQL_HOST
         - name: MYSQL_PORT
           valueFrom:
             configMapKeyRef:
-              name: petclinic-config
+              name: pocketbank-config
               key: MYSQL_PORT
         - name: MYSQL_DATABASE
           valueFrom:
             configMapKeyRef:
-              name: petclinic-config
+              name: pocketbank-config
               key: MYSQL_DATABASE
         - name: SPRING_DATASOURCE_URL
           value: jdbc:mysql://$(MYSQL_HOST):$(MYSQL_PORT)/$(MYSQL_DATABASE)
         - name: SPRING_DATASOURCE_USERNAME
           valueFrom:
             secretKeyRef:
-              name: petclinic-secret
+              name: pocketbank-secret
               key: MYSQL_USER
         - name: SPRING_DATASOURCE_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: petclinic-secret
+              name: pocketbank-secret
               key: MYSQL_PASSWORD
         resources:
           requests:
@@ -359,12 +359,12 @@ cat <<'EOF' | kubectl apply -f -
 apiVersion: v1
 kind: Service
 metadata:
-  name: petclinic
-  namespace: petclinic
+  name: pocketbank
+  namespace: pocketbank
 spec:
   type: ClusterIP
   selector:
-    app: petclinic
+    app: pocketbank
   ports:
   - port: 80
     targetPort: 8080
@@ -372,27 +372,27 @@ spec:
 EOF
 
 # 6. 배포 상태 모니터링
-kubectl rollout status deployment/petclinic -n petclinic -w
+kubectl rollout status deployment/pocketbank -n pocketbank -w
 
 # Pod 상태 확인
-kubectl get pods -n petclinic -o wide
+kubectl get pods -n pocketbank -o wide
 ```
 
 **예상 결과:**
 ```
 NAME                         READY   STATUS    RESTARTS   AGE
-petclinic-xxxxxxxxx-xxxxx    1/1     Running   0          2m
-petclinic-xxxxxxxxx-xxxxx    1/1     Running   0          2m
+pocketbank-xxxxxxxxx-xxxxx    1/1     Running   0          2m
+pocketbank-xxxxxxxxx-xxxxx    1/1     Running   0          2m
 ```
 
 ### 2.4 Application Gateway Backend Pool 업데이트
 
 ```bash
-cd /home/ubuntu/3tier-terraform/codes/azure/2-failover
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
 
-# 1. PetClinic Service의 ClusterIP 확인
-PETCLINIC_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.spec.clusterIP}')
-echo "PetClinic Service ClusterIP: $PETCLINIC_IP"
+# 1. PocketBank Service의 ClusterIP 확인
+PETCLINIC_IP=$(kubectl get svc pocketbank -n pocketbank -o jsonpath='{.spec.clusterIP}')
+echo "PocketBank Service ClusterIP: $PETCLINIC_IP"
 
 # 2. Application Gateway 정보 확인
 APPGW_NAME=$(terraform output -raw appgw_name)
@@ -437,10 +437,10 @@ curl -I http://$APPGW_PUBLIC_IP
 
 # 예상 결과: HTTP/1.1 200 OK
 
-# PetClinic 응답 확인
-curl -s http://$APPGW_PUBLIC_IP | grep -i "petclinic"
+# PocketBank 응답 확인
+curl -s http://$APPGW_PUBLIC_IP | grep -i "pocketbank"
 
-# 예상 결과: <title>PetClinic :: a Spring Framework demonstration</title>
+# 예상 결과: <title>PocketBank :: a Spring Framework demonstration</title>
 ```
 
 ### 2.6 CloudFront Secondary Origin을 Application Gateway로 전환
@@ -455,7 +455,7 @@ aws cloudfront get-distribution-config \
   --query 'DistributionConfig' > /tmp/cloudfront-config-backup.json
 
 # 2. Application Gateway IP 가져오기
-cd /home/ubuntu/3tier-terraform/codes/azure/2-failover
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
 APPGW_IP=$(terraform output -raw appgw_public_ip)
 echo "App Gateway IP: $APPGW_IP"
 
@@ -517,19 +517,19 @@ curl -I https://blueisthenewblack.store
 # HTTP/2 200 OK
 # x-cache: Miss from cloudfront (새로 가져옴)
 
-# 3. PetClinic 응답 확인
-curl -s https://blueisthenewblack.store | grep -i "petclinic"
+# 3. PocketBank 응답 확인
+curl -s https://blueisthenewblack.store | grep -i "pocketbank"
 
-# 예상 결과: PetClinic HTML 내용 표시
+# 예상 결과: PocketBank HTML 내용 표시
 ```
 
 **브라우저 테스트:**
 1. `https://blueisthenewblack.store` 접속
-2. PetClinic 홈페이지 정상 표시 확인
+2. PocketBank 홈페이지 정상 표시 확인
 3. "Find Owners" 메뉴 → 데이터 조회 확인 (Azure MySQL 연결 확인)
 4. "Veterinarians" 메뉴 확인
 
-**결과:** 이제 Azure에서 완전한 PetClinic 서비스가 제공됩니다!
+**결과:** 이제 Azure에서 완전한 PocketBank 서비스가 제공됩니다!
 
 ---
 
@@ -571,7 +571,7 @@ ip-10-0-1-xxx.ap-northeast-2.compute.internal Ready    <none>   2m    v1.28.x
 ip-10-0-1-yyy.ap-northeast-2.compute.internal Ready    <none>   2m    v1.28.x
 ```
 
-### 3.2 AWS EKS PetClinic Pod 상태 확인
+### 3.2 AWS EKS PocketBank Pod 상태 확인
 
 ```bash
 # AWS EKS 컨텍스트로 전환
@@ -580,7 +580,7 @@ aws eks update-kubeconfig \
   --name $(terraform output -raw cluster_name)
 
 # Pod 상태 확인
-kubectl get pods -n petclinic -o wide
+kubectl get pods -n pocketbank -o wide
 
 # 예상 결과: Running 상태의 Pod들
 ```
@@ -626,8 +626,8 @@ curl -I http://$ALB_DNS
 
 # 예상 결과: HTTP/1.1 200 OK
 
-# PetClinic 응답 확인
-curl -s http://$ALB_DNS | grep -i "petclinic"
+# PocketBank 응답 확인
+curl -s http://$ALB_DNS | grep -i "pocketbank"
 ```
 
 ### 3.5 CloudFront가 AWS Primary Origin을 사용하도록 대기
@@ -703,13 +703,13 @@ while true; do
 done
 ```
 
-### 3.7 Azure 2-failover 인프라 삭제
+### 3.7 Azure 2-emergency 인프라 삭제
 
 ```bash
-cd /home/ubuntu/3tier-terraform/codes/azure/2-failover
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
 
-# 1. AKS PetClinic 리소스 삭제 (선택사항)
-kubectl delete namespace petclinic --force --grace-period=0
+# 1. AKS PocketBank 리소스 삭제 (선택사항)
+kubectl delete namespace pocketbank --force --grace-period=0
 
 # 2. Terraform으로 Azure 인프라 삭제
 terraform destroy -auto-approve
@@ -734,8 +734,8 @@ curl -I https://blueisthenewblack.store
 # HTTP/2 200 OK
 # x-cache: Hit from cloudfront (Primary origin - AWS ALB)
 
-# 2. PetClinic 정상 동작 확인
-curl -s https://blueisthenewblack.store | grep -i "petclinic"
+# 2. PocketBank 정상 동작 확인
+curl -s https://blueisthenewblack.store | grep -i "pocketbank"
 
 # 3. CloudFront Origin 설정 확인
 aws cloudfront get-distribution-config \
@@ -758,10 +758,10 @@ aws cloudfront get-distribution-config \
 
 | Phase | 상태 | Primary Origin | Secondary Origin | 서비스 |
 |-------|------|----------------|------------------|--------|
-| **시작** | 정상 운영 | AWS ALB (Healthy) | Blob Storage | PetClinic (AWS) |
+| **시작** | 정상 운영 | AWS ALB (Healthy) | Blob Storage | PocketBank (AWS) |
 | **Phase 1** | 단기 장애 | AWS ALB (Unhealthy) | Blob Storage | 정적 유지보수 페이지 |
-| **Phase 2** | 장기 DR | AWS ALB (Unhealthy) | App Gateway → AKS | PetClinic (Azure) |
-| **Phase 3** | 복구 완료 | AWS ALB (Healthy) | Blob Storage | PetClinic (AWS) |
+| **Phase 2** | 장기 DR | AWS ALB (Unhealthy) | App Gateway → AKS | PocketBank (Azure) |
+| **Phase 3** | 복구 완료 | AWS ALB (Healthy) | Blob Storage | PocketBank (AWS) |
 
 ---
 
@@ -775,14 +775,14 @@ aws cloudfront get-distribution-config \
 - [ ] 브라우저에서 정적 유지보수 페이지 표시 확인
 
 ### Phase 2: 장기 DR (Azure Application Gateway)
-- [ ] Azure 2-failover Terraform 배포 완료
+- [ ] Azure 2-emergency Terraform 배포 완료
 - [ ] Azure MySQL 데이터 복구 완료
-- [ ] Azure AKS PetClinic 배포 완료
+- [ ] Azure AKS PocketBank 배포 완료
 - [ ] Application Gateway Backend Pool을 AKS Service로 변경
 - [ ] Application Gateway HTTP 테스트 성공
 - [ ] CloudFront Secondary Origin을 App Gateway로 변경
 - [ ] CloudFront 배포 완료 (Status: Deployed)
-- [ ] 도메인에서 PetClinic (Azure) 정상 동작 확인
+- [ ] 도메인에서 PocketBank (Azure) 정상 동작 확인
 
 ### Phase 3: AWS 복구 및 정상화
 - [ ] AWS Web 노드 그룹 desired=2로 복구
@@ -791,8 +791,8 @@ aws cloudfront get-distribution-config \
 - [ ] AWS ALB 직접 접속 테스트 성공
 - [ ] CloudFront가 Primary Origin(AWS ALB) 자동 복구 확인
 - [ ] CloudFront Secondary Origin을 Blob Storage로 원복
-- [ ] Azure 2-failover 인프라 삭제 완료
-- [ ] 도메인에서 PetClinic (AWS) 정상 동작 확인
+- [ ] Azure 2-emergency 인프라 삭제 완료
+- [ ] 도메인에서 PocketBank (AWS) 정상 동작 확인
 
 ---
 
@@ -819,8 +819,8 @@ aws cloudfront get-distribution-config \
 
 **해결:**
 ```bash
-# 1. PetClinic Service ClusterIP 재확인
-kubectl get svc petclinic -n petclinic -o jsonpath='{.spec.clusterIP}'
+# 1. PocketBank Service ClusterIP 재확인
+kubectl get svc pocketbank -n pocketbank -o jsonpath='{.spec.clusterIP}'
 
 # 2. Application Gateway Backend Health 확인
 az network application-gateway show-backend-health \
@@ -828,7 +828,7 @@ az network application-gateway show-backend-health \
   --name appgw-blue
 
 # 3. Backend Pool 재설정
-PETCLINIC_IP=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.spec.clusterIP}')
+PETCLINIC_IP=$(kubectl get svc pocketbank -n pocketbank -o jsonpath='{.spec.clusterIP}')
 az network application-gateway address-pool update \
   --resource-group rg-blue \
   --gateway-name appgw-blue \
@@ -895,7 +895,7 @@ aws cloudfront wait invalidation-completed \
 
 ### Azure 리소스 비용 절감 팁
 
-2-failover 인프라는 장애 시에만 사용하므로 평소에는 destroy 상태로 유지하여 비용 절감 가능:
+2-emergency 인프라는 장애 시에만 사용하므로 평소에는 destroy 상태로 유지하여 비용 절감 가능:
 
 ```bash
 # 필요 시 배포

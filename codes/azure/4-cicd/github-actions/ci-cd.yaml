@@ -19,9 +19,8 @@ on:
 env:
   AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   RESOURCE_GROUP: bloberry-rg
-  ACR_NAME: bloberryacr
-  ACR_REGISTRY: bloberryacr.azurecr.io
-  ACR_REPOSITORY: petclinic
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  DOCKERHUB_REPOSITORY: pocketbank
   AKS_CLUSTER_NAME: bloberry-aks
 
 jobs:
@@ -110,7 +109,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           mvn clean verify sonar:sonar \
-            -Dsonar.projectKey=petclinic-azure \
+            -Dsonar.projectKey=pocketbank-azure \
             -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
             -Dsonar.token=${{ secrets.SONAR_TOKEN }}
 
@@ -131,7 +130,7 @@ jobs:
       - name: Run OWASP Dependency Check
         uses: dependency-check/Dependency-Check_Action@main
         with:
-          project: 'petclinic-azure'
+          project: 'pocketbank-azure'
           path: '.'
           format: 'SARIF'
 
@@ -141,10 +140,10 @@ jobs:
           sarif_file: reports/dependency-check-report.sarif
 
   # ============================================
-  # Docker Build & Push to ACR Job
+  # Docker Build & Push to DockerHub Job
   # ============================================
   docker:
-    name: Build & Push Docker Image to ACR
+    name: Build & Push Docker Image to DockerHub
     runs-on: ubuntu-latest
     needs: [build, code-quality, security-scan]
     if: github.event_name == 'push'
@@ -161,14 +160,11 @@ jobs:
           name: application-jar
           path: target/
 
-      - name: Login to Azure
-        uses: azure/login@v2
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Login to Azure Container Registry
-        run: |
-          az acr login --name ${{ env.ACR_NAME }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -180,24 +176,23 @@ jobs:
         run: |
           # Build image
           docker buildx build \
+            --cache-from type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY }}:cache \
+            --cache-to type=inline \
             --platform linux/amd64 \
-            --tag ${{ env.ACR_REGISTRY }}/${{ env.ACR_REPOSITORY }}:$IMAGE_TAG \
-            --tag ${{ env.ACR_REGISTRY }}/${{ env.ACR_REPOSITORY }}:latest \
+            --tag ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY }}:$IMAGE_TAG \
+            --tag ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY }}:latest \
             --push \
             .
 
-          echo "image=${{ env.ACR_REGISTRY }}/${{ env.ACR_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "image=${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ env.ACR_REGISTRY }}/${{ env.ACR_REPOSITORY }}:${{ needs.build.outputs.version }}'
+          image-ref: '${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY }}:${{ needs.build.outputs.version }}'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
-        env:
-          TRIVY_USERNAME: ${{ secrets.ACR_USERNAME }}
-          TRIVY_PASSWORD: ${{ secrets.ACR_PASSWORD }}
 
       - name: Upload Trivy scan results
         uses: github/codeql-action/upload-sarif@v3
@@ -217,7 +212,7 @@ jobs:
       - name: Checkout GitOps repository
         uses: actions/checkout@v4
         with:
-          repository: your-org/petclinic-gitops
+          repository: your-org/pocketbank-gitops
           token: ${{ secrets.GITOPS_TOKEN }}
           path: gitops
 
@@ -229,7 +224,7 @@ jobs:
           IMAGE_TAG: ${{ needs.build.outputs.version }}
         run: |
           cd gitops/overlays/azure-prod
-          kustomize edit set image petclinic=${{ needs.docker.outputs.image-uri }}
+          kustomize edit set image pocketbank=${{ needs.docker.outputs.image-uri }}
 
       - name: Commit and push changes
         env:
@@ -279,12 +274,12 @@ jobs:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER_AZURE }}
           ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN_AZURE }}
         run: |
-          argocd app sync petclinic-azure \
+          argocd app sync pocketbank-azure \
             --server $ARGOCD_SERVER \
             --auth-token $ARGOCD_AUTH_TOKEN \
             --grpc-web
 
-          argocd app wait petclinic-azure \
+          argocd app wait pocketbank-azure \
             --server $ARGOCD_SERVER \
             --auth-token $ARGOCD_AUTH_TOKEN \
             --grpc-web \
@@ -314,12 +309,12 @@ jobs:
 
       - name: Verify deployment status
         run: |
-          kubectl rollout status deployment/petclinic -n petclinic --timeout=300s
+          kubectl rollout status deployment/pocketbank -n pocketbank --timeout=300s
 
       - name: Run smoke tests
         run: |
           # Get service endpoint (Azure uses IP, not hostname)
-          ENDPOINT=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          ENDPOINT=$(kubectl get svc pocketbank -n pocketbank -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
           # Wait for endpoint to be available
           for i in {1..30}; do
@@ -390,7 +385,7 @@ jobs:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER_AZURE }}
           ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN_AZURE }}
         run: |
-          argocd app rollback petclinic-azure \
+          argocd app rollback pocketbank-azure \
             --server $ARGOCD_SERVER \
             --auth-token $ARGOCD_AUTH_TOKEN \
             --grpc-web

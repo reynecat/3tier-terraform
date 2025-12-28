@@ -152,7 +152,7 @@ configs:
 
     # Repository 설정
     repositories: |
-      - url: https://github.com/your-org/petclinic-gitops.git
+      - url: https://github.com/your-org/pocketbank-gitops.git
         passwordSecret:
           name: github-secret
           key: password

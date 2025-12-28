@@ -38,7 +38,7 @@ spec:
                 - was
       containers:
       - name: spring-boot
-        image: springio/petclinic:latest
+        image: cloud039/pocketbank-was:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
@@ -76,36 +76,36 @@ spec:
         
         resources:
           requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
             cpu: 500m
             memory: 512Mi
-          limits:
-            cpu: 1000m
-            memory: 1Gi
         
         # Startup Probe - 최초 기동 시 (최대 2분)
         startupProbe:
           httpGet:
-            path: /
+            path: /actuator/health
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 12
-        
+
         # Liveness Probe - 살아있는지 확인
         livenessProbe:
           httpGet:
-            path: /
+            path: /actuator/health
             port: 8080
           initialDelaySeconds: 0
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
-        
+
         # Readiness Probe - 트래픽 받을 준비가 되었는지
         readinessProbe:
           httpGet:
-            path: /
+            path: /actuator/health
             port: 8080
           initialDelaySeconds: 0
           periodSeconds: 5

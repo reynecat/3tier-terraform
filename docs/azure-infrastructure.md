@@ -10,7 +10,7 @@
 - [디렉토리 구조](#디렉토리-구조)
 - [Pilot Light 3단계 전략](#pilot-light-3단계-전략)
 - [codes/azure/1-always - 상시 대기 리소스](#codesazure1-always---상시-대기-리소스)
-- [codes/azure/2-failover - 재해 복구 리소스](#codesazure2-failover---재해-복구-리소스)
+- [codes/azure/2-emergency - 재해 복구 리소스](#codesazure2-emergency---재해-복구-리소스)
 - [서비스 플로우](#서비스-플로우)
 - [리소스 의존성](#리소스-의존성)
 - [비용 분석](#비용-분석)
@@ -55,7 +55,7 @@ codes/azure/
 │   ├── variables.tf           # 입력 변수 정의
 │   └── outputs.tf             # 출력값 정의
 │
-└── 2-failover/                # Stage 2-3: 재해 복구 리소스
+└── 2-emergency/                # Stage 2-3: 재해 복구 리소스
     ├── main.tf                # MySQL, AKS, Application Gateway
     ├── variables.tf           # 입력 변수 정의
     ├── outputs.tf             # 출력값 정의
@@ -67,7 +67,7 @@ codes/azure/
 | 디렉토리 | 배포 시점 | 비용 영향 | 목적 |
 |----------|-----------|-----------|------|
 | `1-always` | 최초 1회 | $5~10/월 | 백업 수신, 점검 페이지 대기 |
-| `2-failover` | 장애 발생 시 | +$150~200/월 | 전체 서비스 복구 |
+| `2-emergency` | 장애 발생 시 | +$150~200/월 | 전체 서비스 복구 |
 
 분리함으로써:
 - 실수로 비용이 발생하는 리소스를 배포하는 것을 방지
@@ -99,7 +99,7 @@ codes/azure/
 │  비용: ~$5/월                                                            │
 └─────────────────────────────────────────────────────────────────────────┘
                                   │
-                                  ▼ terraform apply (codes/azure/2-failover)
+                                  ▼ terraform apply (codes/azure/2-emergency)
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  Stage 2: Database Recovery (10-15분)                                   │
 │                                                                          │
@@ -122,7 +122,7 @@ codes/azure/
 │  Stage 3: Full Service (15-75분)                                        │
 │                                                                          │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────┐  │
-│  │ Application      │  │ AKS Cluster       │  │ PetClinic Pods       │  │
+│  │ Application      │  │ AKS Cluster       │  │ PocketBank Pods       │  │
 │  │ Gateway          │  │ (Zone Redundant)  │  │                      │  │
 │  │                  │  │                   │  │ ┌────────────────┐   │  │
 │  │ Public IP        │→│ Web Node Pool    │→│ │ Nginx Ingress  │   │  │
@@ -300,13 +300,13 @@ resource "aws_route53_record" "azure_maintenance" {
 
 ---
 
-## codes/azure/2-failover - 재해 복구 리소스
+## codes/azure/2-emergency - 재해 복구 리소스
 
-**위치**: `codes/azure/2-failover/main.tf`
+**위치**: `codes/azure/2-emergency/main.tf`
 
 ### 역할과 기능
 
-2-failover 모듈은 AWS 장애 시에만 배포되는 전체 서비스 복구 리소스를 관리합니다. MySQL, AKS, Application Gateway를 프로비저닝합니다.
+2-emergency 모듈은 AWS 장애 시에만 배포되는 전체 서비스 복구 리소스를 관리합니다. MySQL, AKS, Application Gateway를 프로비저닝합니다.
 
 ### 리소스 구성
 
@@ -456,7 +456,7 @@ resource "azurerm_application_gateway" "main" {
     ip_addresses = ["20.214.124.157"]  # AKS LB IP
   }
 
-  # Health Probe → PetClinic 루트 경로
+  # Health Probe → PocketBank 루트 경로
   probe {
     protocol            = "Http"
     path                = "/"
@@ -520,7 +520,7 @@ resource "azurerm_public_ip" "appgw" {
       │   └── Nginx Ingress Pod
       │
       └── WAS Node Pool
-          └── Spring Boot PetClinic Pod
+          └── Spring Boot PocketBank Pod
                 │
                 ▼
 [MySQL Flexible Server] (mysql-dr-prod.mysql.database.azure.com:3306)
@@ -573,7 +573,7 @@ resource "azurerm_public_ip" "appgw" {
 
 [T+5분] 운영자 판단: 복구 필요
 
-    cd codes/azure/2-failover
+    cd codes/azure/2-emergency
     terraform apply
 
 [T+15분] MySQL Flexible Server 준비 완료
@@ -592,7 +592,7 @@ resource "azurerm_public_ip" "appgw" {
 [운영자] Kubernetes 매니페스트 배포
     kubectl apply -f k8s-manifests/
 
-[T+60분] PetClinic Pods Running
+[T+60분] PocketBank Pods Running
     │
     ▼
 [운영자] CloudFront Secondary Origin 변경
@@ -630,10 +630,10 @@ terraform apply (codes/azure/1-always)
     └── azure.domain.com → blob static website
 ```
 
-### 2-failover 배포 순서
+### 2-emergency 배포 순서
 
 ```
-terraform apply (codes/azure/2-failover)
+terraform apply (codes/azure/2-emergency)
 │
 ├── Data Sources (1-always 참조)
 │   ├── Resource Group
@@ -667,7 +667,7 @@ terraform apply (codes/azure/2-failover)
 terraform apply 완료 후:
 
 1. 데이터베이스 복구
-   cd codes/azure/2-failover
+   cd codes/azure/2-emergency
    ./restore-db.sh
 
 2. AKS 자격증명 획득

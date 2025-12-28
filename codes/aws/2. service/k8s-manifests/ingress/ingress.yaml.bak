@@ -35,7 +35,7 @@ metadata:
       stickiness.lb_cookie.duration_seconds=3600
     
     # 태그
-    alb.ingress.kubernetes.io/tags: Environment=prod,ManagedBy=kubernetes,Application=petclinic
+    alb.ingress.kubernetes.io/tags: Environment=prod,ManagedBy=kubernetes,Application=pocketbank
 
 spec:
   ingressClassName: alb

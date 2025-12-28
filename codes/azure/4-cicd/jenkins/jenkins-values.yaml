@@ -80,13 +80,13 @@ controller:
       jobs: |
         jobs:
           - script: >
-              multibranchPipelineJob('petclinic-azure') {
+              multibranchPipelineJob('pocketbank-azure') {
                   branchSources {
                       github {
-                          id('petclinic-azure-github')
+                          id('pocketbank-azure-github')
                           scanCredentialsId('github-credentials')
                           repoOwner('your-org')
-                          repository('spring-petclinic')
+                          repository('spring-pocketbank')
                       }
                   }
                   orphanedItemStrategy {

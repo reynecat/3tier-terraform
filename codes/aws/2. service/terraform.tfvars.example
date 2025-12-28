@@ -28,7 +28,7 @@ backup_instance_ssh_public_key = ""
 # 데이터베이스 설정
 # =================================================
 
-db_name     = "petclinic"
+db_name     = "pocketbank"
 db_username = "admin"
 db_password = "byemyblue"  # 실제 사용 시 환경변수 권장
 

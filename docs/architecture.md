@@ -8,7 +8,7 @@
 - **Infrastructure as Code:** Terraform + Kubernetes
 - **Primary Site:** AWS (ap-northeast-2, Seoul)
 - **Secondary Site:** Azure (Korea Central, 3-stage failover)
-- **Application:** Spring Boot PetClinic + Nginx
+- **Application:** Spring Boot PocketBank (금융 데모) + Nginx (리버스 프록시)
 - **Database:** MySQL 8.0 Multi-AZ
 
 ---
@@ -250,7 +250,7 @@
 ### **WAS Tier (Spring Boot)**
 
 **Deployment:**
-- Image: `springio/petclinic:latest`
+- Image: `springio/pocketbank:latest`
 - Replicas: 2
 - Resources: CPU 1-2, Memory 1Gi-2Gi
 - Port: 8080

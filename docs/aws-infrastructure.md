@@ -500,7 +500,7 @@ SNS 알람 → Lambda → 복구 작업
     │ Port 8080
     ▼
 [EKS WAS Nodes] (WAS Tier Subnet)
-    │ Spring Boot PetClinic
+    │ Spring Boot PocketBank
     │ Port 8080
     ▼
 [RDS MySQL] (RDS Tier Subnet)

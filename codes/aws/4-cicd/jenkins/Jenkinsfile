@@ -45,14 +45,15 @@ spec:
     }
 
     environment {
-        // AWS ECR 설정
-        AWS_REGION = 'ap-northeast-2'
-        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-        ECR_REPOSITORY = 'petclinic'
+        // DockerHub 설정
+        DOCKERHUB_REGISTRY = 'docker.io'
+        DOCKERHUB_USERNAME = 'cloud039'
+        WEB_REPOSITORY = 'cloud039/pocketbank-web'
+        WAS_REPOSITORY = 'cloud039/pocketbank-was'
 
         // Git 설정
-        GIT_REPO = 'https://github.com/your-org/spring-petclinic.git'
-        GITOPS_REPO = 'https://github.com/your-org/petclinic-gitops.git'
+        GIT_REPO = 'https://github.com/your-org/spring-pocketbank.git'
+        GITOPS_REPO = 'https://github.com/your-org/pocketbank-gitops.git'
 
         // 버전 태그
         IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'latest'}"
@@ -101,7 +102,7 @@ spec:
                     withSonarQubeEnv('SonarQube') {
                         sh '''
                             mvn sonar:sonar \
-                                -Dsonar.projectKey=petclinic \
+                                -Dsonar.projectKey=pocketbank \
                                 -Dsonar.host.url=${SONAR_HOST_URL}
                         '''
                     }
@@ -117,21 +118,33 @@ spec:
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build Docker Images') {
             steps {
                 container('docker') {
                     script {
-                        // ECR 로그인
-                        sh '''
-                            aws ecr get-login-password --region ${AWS_REGION} | \
-                            docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                        '''
+                        // DockerHub 로그인
+                        withCredentials([usernamePassword(
+                            credentialsId: 'dockerhub-credentials',
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_PASS'
+                        )]) {
+                            sh '''
+                                echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin
+                            '''
+                        }
 
-                        // Docker 이미지 빌드
+                        // WAS Docker 이미지 빌드
                         sh """
-                            docker build -t ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} .
-                            docker tag ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} \
-                                       ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest
+                            cd was
+                            docker build -t ${WAS_REPOSITORY}:${IMAGE_TAG} .
+                            docker tag ${WAS_REPOSITORY}:${IMAGE_TAG} ${WAS_REPOSITORY}:latest
+                        """
+
+                        // Web Docker 이미지 빌드
+                        sh """
+                            cd web
+                            docker build -t ${WEB_REPOSITORY}:${IMAGE_TAG} .
+                            docker tag ${WEB_REPOSITORY}:${IMAGE_TAG} ${WEB_REPOSITORY}:latest
                         """
                     }
                 }
@@ -140,7 +153,7 @@ spec:
 
         stage('Security Scan') {
             parallel {
-                stage('Trivy Scan') {
+                stage('Trivy Scan - WAS') {
                     steps {
                         container('docker') {
                             sh """
@@ -148,7 +161,20 @@ spec:
                                     aquasec/trivy:latest image \
                                     --severity HIGH,CRITICAL \
                                     --exit-code 0 \
-                                    ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+                                    ${WAS_REPOSITORY}:${IMAGE_TAG}
+                            """
+                        }
+                    }
+                }
+                stage('Trivy Scan - Web') {
+                    steps {
+                        container('docker') {
+                            sh """
+                                docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                                    aquasec/trivy:latest image \
+                                    --severity HIGH,CRITICAL \
+                                    --exit-code 0 \
+                                    ${WEB_REPOSITORY}:${IMAGE_TAG}
                             """
                         }
                     }
@@ -163,12 +189,14 @@ spec:
             }
         }
 
-        stage('Push to ECR') {
+        stage('Push to DockerHub') {
             steps {
                 container('docker') {
                     sh """
-                        docker push ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
-                        docker push ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest
+                        docker push ${WAS_REPOSITORY}:${IMAGE_TAG}
+                        docker push ${WAS_REPOSITORY}:latest
+                        docker push ${WEB_REPOSITORY}:${IMAGE_TAG}
+                        docker push ${WEB_REPOSITORY}:latest
                     """
                 }
             }
@@ -184,12 +212,13 @@ spec:
                     )]) {
                         sh """
                             # GitOps 레포지토리 클론
-                            git clone https://\${GIT_USERNAME}:\${GIT_PASSWORD}@github.com/your-org/petclinic-gitops.git
-                            cd petclinic-gitops
+                            git clone https://\${GIT_USERNAME}:\${GIT_PASSWORD}@github.com/your-org/pocketbank-gitops.git
+                            cd pocketbank-gitops
 
                             # 이미지 태그 업데이트 (kustomize 사용)
                             cd overlays/aws-prod
-                            kustomize edit set image ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+                            kustomize edit set image ${WAS_REPOSITORY}:${IMAGE_TAG}
+                            kustomize edit set image ${WEB_REPOSITORY}:${IMAGE_TAG}
 
                             # 변경사항 커밋 및 푸시
                             git config user.email "jenkins@example.com"
@@ -209,13 +238,13 @@ spec:
                     withCredentials([string(credentialsId: 'argocd-token', variable: 'ARGOCD_TOKEN')]) {
                         sh '''
                             # ArgoCD CLI를 사용하여 동기화
-                            argocd app sync petclinic-aws \
+                            argocd app sync pocketbank-aws \
                                 --server argocd-server.argocd.svc.cluster.local \
                                 --auth-token ${ARGOCD_TOKEN} \
                                 --grpc-web
 
                             # 동기화 완료 대기
-                            argocd app wait petclinic-aws \
+                            argocd app wait pocketbank-aws \
                                 --server argocd-server.argocd.svc.cluster.local \
                                 --auth-token ${ARGOCD_TOKEN} \
                                 --grpc-web \
@@ -231,10 +260,10 @@ spec:
                 container('kubectl') {
                     sh '''
                         # 배포 상태 확인
-                        kubectl rollout status deployment/petclinic -n petclinic --timeout=300s
+                        kubectl rollout status deployment/pocketbank -n pocketbank --timeout=300s
 
                         # 헬스 체크
-                        ENDPOINT=$(kubectl get svc petclinic -n petclinic -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+                        ENDPOINT=$(kubectl get svc pocketbank -n pocketbank -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
                         curl -f http://${ENDPOINT}/actuator/health || exit 1
                     '''
                 }
@@ -247,7 +276,7 @@ spec:
             slackSend(
                 channel: '#deployments',
                 color: 'good',
-                message: "✅ AWS 배포 성공: ${env.JOB_NAME} #${env.BUILD_NUMBER}\nImage: ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+                message: "✅ AWS 배포 성공: ${env.JOB_NAME} #${env.BUILD_NUMBER}\nWAS: ${WAS_REPOSITORY}:${IMAGE_TAG}\nWeb: ${WEB_REPOSITORY}:${IMAGE_TAG}"
             )
         }
         failure {
