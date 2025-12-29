@@ -5,7 +5,6 @@ metadata:
   namespace: was
 data:
   SPRING_PROFILES_ACTIVE: "mysql"
-  SERVER_PORT: "8080"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -16,7 +15,7 @@ metadata:
     app: was-spring
     tier: was
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: was-spring
@@ -27,37 +26,20 @@ spec:
         app: was-spring
         tier: was
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: tier
-                operator: In
-                values:
-                - was
       containers:
       - name: spring-boot
-        image: cloud039/pocketbank-was:latest
+        image: springio/petclinic
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
           name: http
           protocol: TCP
         env:
-        # ConfigMap에서 읽기
         - name: SPRING_PROFILES_ACTIVE
           valueFrom:
             configMapKeyRef:
               name: was-config
               key: SPRING_PROFILES_ACTIVE
-        - name: SERVER_PORT
-          valueFrom:
-            configMapKeyRef:
-              name: was-config
-              key: SERVER_PORT
-        
-        # Secret에서 DB 연결 정보 읽기
         - name: SPRING_DATASOURCE_URL
           valueFrom:
             secretKeyRef:
@@ -73,7 +55,7 @@ spec:
             secretKeyRef:
               name: db-credentials
               key: password
-        
+
         resources:
           requests:
             cpu: 250m
@@ -81,35 +63,32 @@ spec:
           limits:
             cpu: 500m
             memory: 512Mi
-        
-        # Startup Probe - 최초 기동 시 (최대 2분)
+
         startupProbe:
           httpGet:
-            path: /actuator/health
+            path: /
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 12
 
-        # Liveness Probe - 살아있는지 확인
         livenessProbe:
           httpGet:
-            path: /actuator/health
+            path: /
             port: 8080
           initialDelaySeconds: 0
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
 
-        # Readiness Probe - 트래픽 받을 준비가 되었는지
         readinessProbe:
           httpGet:
-            path: /actuator/health
+            path: /
             port: 8080
           initialDelaySeconds: 0
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
-      
+
       terminationGracePeriodSeconds: 30

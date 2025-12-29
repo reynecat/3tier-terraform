@@ -1,108 +1,60 @@
-# ArgoCD Application for AWS EKS PocketBank
+# ArgoCD Application for Petclinic on AWS EKS
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
-  name: pocketbank
+  name: petclinic
   namespace: argocd
 spec:
-  description: "PocketBank Application Project"
+  description: "Petclinic Application Project"
 
-  # 소스 레포지토리 허용 목록
   sourceRepos:
-    - 'https://github.com/your-org/pocketbank-gitops.git'
-    - 'https://github.com/your-org/spring-pocketbank.git'
+    - '*'
 
-  # 배포 대상 클러스터 및 네임스페이스
   destinations:
-    - namespace: pocketbank
+    - namespace: web
       server: https://kubernetes.default.svc
-    - namespace: pocketbank-staging
+    - namespace: was
       server: https://kubernetes.default.svc
 
-  # 클러스터 리소스 허용 목록
   clusterResourceWhitelist:
     - group: ''
       kind: Namespace
-    - group: 'rbac.authorization.k8s.io'
-      kind: ClusterRole
-    - group: 'rbac.authorization.k8s.io'
-      kind: ClusterRoleBinding
 
-  # 네임스페이스 리소스 허용 목록
   namespaceResourceWhitelist:
     - group: '*'
       kind: '*'
-
-  # Orphaned 리소스 모니터링
-  orphanedResources:
-    warn: true
-
-  # 역할 정의
-  roles:
-    - name: developer
-      description: Developer role with read access
-      policies:
-        - p, proj:pocketbank:developer, applications, get, pocketbank/*, allow
-        - p, proj:pocketbank:developer, applications, sync, pocketbank/*, allow
-      groups:
-        - your-org:developers
-
-    - name: admin
-      description: Admin role with full access
-      policies:
-        - p, proj:pocketbank:admin, applications, *, pocketbank/*, allow
-        - p, proj:pocketbank:admin, repositories, *, pocketbank/*, allow
-      groups:
-        - your-org:devops-team
 
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: pocketbank-aws
+  name: petclinic-aws
   namespace: argocd
   labels:
-    app: pocketbank
+    app: petclinic
     environment: production
     cloud: aws
-  annotations:
-    notifications.argoproj.io/subscribe.on-deployed.slack: deployments
-    notifications.argoproj.io/subscribe.on-sync-failed.slack: deployments
-    notifications.argoproj.io/subscribe.on-health-degraded.slack: deployments
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
 spec:
-  project: pocketbank
+  project: petclinic
 
   source:
-    repoURL: https://github.com/your-org/pocketbank-gitops.git
+    repoURL: https://github.com/your-org/3tier-terraform.git
     targetRevision: main
-    path: overlays/aws-prod
-
-    # Kustomize 설정
-    kustomize:
-      images:
-        - cloud039/pocketbank-web:latest
-        - cloud039/pocketbank-was:latest
+    path: codes/aws/2. service/k8s-manifests
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: pocketbank
 
-  # 동기화 정책
   syncPolicy:
     automated:
-      prune: true           # 불필요한 리소스 자동 삭제
-      selfHeal: true        # 드리프트 자동 수정
-      allowEmpty: false     # 빈 리소스 방지
+      prune: true
+      selfHeal: true
+      allowEmpty: false
 
     syncOptions:
       - CreateNamespace=true
       - PruneLast=true
-      - ApplyOutOfSyncOnly=true
-      - Validate=true
-      - RespectIgnoreDifferences=true
 
     retry:
       limit: 5
@@ -111,86 +63,4 @@ spec:
         factor: 2
         maxDuration: 3m
 
-  # 리소스 무시 규칙
-  ignoreDifferences:
-    - group: apps
-      kind: Deployment
-      jsonPointers:
-        - /spec/replicas   # HPA 관리
-
-  # 헬스 체크 설정
   revisionHistoryLimit: 10
-
----
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: pocketbank-aws-staging
-  namespace: argocd
-  labels:
-    app: pocketbank
-    environment: staging
-    cloud: aws
-spec:
-  project: pocketbank
-
-  source:
-    repoURL: https://github.com/your-org/pocketbank-gitops.git
-    targetRevision: develop
-    path: overlays/aws-staging
-
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: pocketbank-staging
-
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-
-    syncOptions:
-      - CreateNamespace=true
-
----
-# ApplicationSet을 사용한 멀티 환경 배포
-apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: pocketbank-envs
-  namespace: argocd
-spec:
-  generators:
-    - list:
-        elements:
-          - env: dev
-            namespace: pocketbank-dev
-            branch: develop
-            autoSync: true
-          - env: staging
-            namespace: pocketbank-staging
-            branch: staging
-            autoSync: true
-          - env: prod
-            namespace: pocketbank
-            branch: main
-            autoSync: false  # Production은 수동 승인
-
-  template:
-    metadata:
-      name: 'pocketbank-{{env}}'
-      namespace: argocd
-    spec:
-      project: pocketbank
-      source:
-        repoURL: https://github.com/your-org/pocketbank-gitops.git
-        targetRevision: '{{branch}}'
-        path: 'overlays/aws-{{env}}'
-      destination:
-        server: https://kubernetes.default.svc
-        namespace: '{{namespace}}'
-      syncPolicy:
-        automated:
-          prune: '{{autoSync}}'
-          selfHeal: '{{autoSync}}'
-        syncOptions:
-          - CreateNamespace=true

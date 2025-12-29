@@ -5,7 +5,6 @@ metadata:
   namespace: was
 data:
   SPRING_PROFILES_ACTIVE: "mysql"
-  SERVER_PORT: "8080"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -16,7 +15,7 @@ metadata:
     app: was-spring
     tier: was
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: was-spring
@@ -27,18 +26,9 @@ spec:
         app: was-spring
         tier: was
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: tier
-                operator: In
-                values:
-                - was
       containers:
       - name: spring-boot
-        image: cloud039/pocketbank-was:latest
+        image: springio/petclinic
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
@@ -50,11 +40,6 @@ spec:
             configMapKeyRef:
               name: was-config
               key: SPRING_PROFILES_ACTIVE
-        - name: SERVER_PORT
-          valueFrom:
-            configMapKeyRef:
-              name: was-config
-              key: SERVER_PORT
         - name: SPRING_DATASOURCE_URL
           valueFrom:
             secretKeyRef:
@@ -79,7 +64,7 @@ spec:
             memory: 512Mi
         startupProbe:
           httpGet:
-            path: /actuator/health
+            path: /
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
@@ -87,7 +72,7 @@ spec:
           failureThreshold: 12
         livenessProbe:
           httpGet:
-            path: /actuator/health
+            path: /
             port: 8080
           initialDelaySeconds: 0
           periodSeconds: 10
@@ -95,7 +80,7 @@ spec:
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /actuator/health
+            path: /
             port: 8080
           initialDelaySeconds: 0
           periodSeconds: 5
