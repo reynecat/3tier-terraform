@@ -363,7 +363,35 @@ curl -I https://blueisthenewblack.store/
 
 ---
 
-**문서 버전**: v2.1
+---
+
+## ✅ 배포 현황
+
+### 현재 운영 중 (2025-12-28)
+
+| 구분 | 상태 | 엔드포인트 |
+|------|------|------------|
+| **Production** | 🟢 운영 중 | https://blueisthenewblack.store |
+| AWS Primary | 🟢 Active | k8s-web-webingre-5d0cf16a97-1358663516.ap-northeast-2.elb.amazonaws.com |
+| Azure Secondary | 🟢 Standby | bloberry01.z12.web.core.windows.net |
+| CloudFront | 🟢 Deployed | E2OX3Z0XHNDUN |
+
+### 배포 구성
+- **Container Registry**: DockerHub (cloud039)
+- **WAS Image**: `cloud039/pocketbank-was:latest`
+- **Web Image**: `cloud039/pocketbank-web:latest`
+- **EKS Cluster**: blue-eks (Kubernetes 1.34)
+- **Database**: RDS MySQL Multi-AZ
+- **Auto-Scaling**: Web (2 pods), WAS (2 pods)
+
+### 최근 변경사항
+- 2025-12-28: ECR/ACR → DockerHub 마이그레이션 완료
+- 2025-12-28: CloudFront DefaultCacheBehavior 수정 (secondary-azure → primary-aws-alb)
+- 2025-12-28: Spring PetClinic → PocketBank 애플리케이션 전환
+
+---
+
+**문서 버전**: v2.2
 **최종 수정**: 2025-12-28
 **작성자**: I2ST-blue
 
