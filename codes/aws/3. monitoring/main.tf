@@ -156,24 +156,25 @@ resource "aws_cloudwatch_log_group" "application" {
 
 # CPUUtilization Alarm
 resource "aws_cloudwatch_metric_alarm" "node_cpu_high" {
-  alarm_name          = "${var.environment}-eks-node-cpu-high"
+  alarm_name          = "${var.eks_cluster_name}-node-cpu-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = 2
   metric_name         = "node_cpu_utilization"
   namespace           = "ContainerInsights"
   period              = 300
   statistic           = "Average"
   threshold           = var.cpu_threshold
-  alarm_description   = "EKS 노드 CPU 사용률이 ${var.cpu_threshold}%를 초과했습니다"
+  alarm_description   = "10 분 내 2개의 데이터 포인트에 대한 node_cpu_utilization > ${var.cpu_threshold}"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     ClusterName = var.eks_cluster_name
   }
 
   tags = {
-    Name = "${var.environment}-eks-node-cpu-high"
+    Name = "${var.eks_cluster_name}-node-cpu-high"
   }
 }
 
@@ -202,30 +203,31 @@ resource "aws_cloudwatch_metric_alarm" "node_status_check_failed" {
 
 # Memory Utilization Alarm
 resource "aws_cloudwatch_metric_alarm" "node_memory_high" {
-  alarm_name          = "${var.environment}-eks-node-memory-high"
+  alarm_name          = "${var.eks_cluster_name}-node-memory-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = 2
   metric_name         = "node_memory_utilization"
   namespace           = "ContainerInsights"
   period              = 300
   statistic           = "Average"
   threshold           = var.memory_threshold
-  alarm_description   = "EKS 노드 메모리 사용률이 ${var.memory_threshold}%를 초과했습니다"
+  alarm_description   = "10 분 내 2개의 데이터 포인트에 대한 node_memory_utilization > ${var.memory_threshold}"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     ClusterName = var.eks_cluster_name
   }
 
   tags = {
-    Name = "${var.environment}-eks-node-memory-high"
+    Name = "${var.eks_cluster_name}-node-memory-high"
   }
 }
 
 # Disk Utilization Alarm
 resource "aws_cloudwatch_metric_alarm" "node_disk_high" {
-  alarm_name          = "${var.environment}-eks-node-disk-high"
+  alarm_name          = "${var.eks_cluster_name}-node-disk-high"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
   metric_name         = "node_filesystem_utilization"
@@ -233,22 +235,23 @@ resource "aws_cloudwatch_metric_alarm" "node_disk_high" {
   period              = 300
   statistic           = "Average"
   threshold           = var.disk_threshold
-  alarm_description   = "EKS 노드 디스크 사용률이 ${var.disk_threshold}%를 초과했습니다"
+  alarm_description   = "10 분 내 2개의 데이터 포인트에 대한 node_filesystem_utilization > ${var.disk_threshold}"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     ClusterName = var.eks_cluster_name
   }
 
   tags = {
-    Name = "${var.environment}-eks-node-disk-high"
+    Name = "${var.eks_cluster_name}-node-disk-high"
   }
 }
 
 # Node Status (노드 수 모니터링)
 resource "aws_cloudwatch_metric_alarm" "node_count_low" {
-  alarm_name          = "${var.environment}-eks-node-count-low"
+  alarm_name          = "${var.eks_cluster_name}-node-count-low"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 2
   metric_name         = "cluster_node_count"
@@ -256,16 +259,17 @@ resource "aws_cloudwatch_metric_alarm" "node_count_low" {
   period              = 300
   statistic           = "Average"
   threshold           = var.min_node_count
-  alarm_description   = "EKS 클러스터 노드 수가 최소값 미만입니다"
+  alarm_description   = "10 분 내 2개의 데이터 포인트에 대한 cluster_node_count < ${var.min_node_count}"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     ClusterName = var.eks_cluster_name
   }
 
   tags = {
-    Name = "${var.environment}-eks-node-count-low"
+    Name = "${var.eks_cluster_name}-node-count-low"
   }
 }
 
@@ -300,15 +304,15 @@ resource "aws_cloudwatch_metric_alarm" "alb_surge_queue" {
 # HTTPCode_ELB_5XX Alarm
 resource "aws_cloudwatch_metric_alarm" "alb_5xx_errors" {
   count               = var.alb_name != "" ? 1 : 0
-  alarm_name          = "${var.environment}-alb-5xx-errors-high"
+  alarm_name          = "${var.eks_cluster_name}-alb-5xx-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = 1
   metric_name         = "HTTPCode_ELB_5XX_Count"
   namespace           = "AWS/ApplicationELB"
   period              = 300
   statistic           = "Sum"
   threshold           = var.http_5xx_threshold
-  alarm_description   = "ALB 5XX 에러가 ${var.http_5xx_threshold}회를 초과했습니다"
+  alarm_description   = "5 분 내 1개의 데이터 포인트에 대한 HTTPCode_ELB_5XX_Count > ${var.http_5xx_threshold}"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
   treat_missing_data  = "notBreaching"
@@ -318,7 +322,7 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx_errors" {
   }
 
   tags = {
-    Name = "${var.environment}-alb-5xx-errors-high"
+    Name = "${var.eks_cluster_name}-alb-5xx-high"
   }
 }
 
@@ -350,41 +354,43 @@ resource "aws_cloudwatch_metric_alarm" "target_5xx_errors" {
 # Latency Alarm
 resource "aws_cloudwatch_metric_alarm" "alb_latency_high" {
   count               = var.alb_name != "" ? 1 : 0
-  alarm_name          = "${var.environment}-alb-latency-high"
+  alarm_name          = "${var.eks_cluster_name}-alb-latency-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = 2
   metric_name         = "TargetResponseTime"
   namespace           = "AWS/ApplicationELB"
   period              = 300
-  extended_statistic  = "p95"
+  extended_statistic  = "p90"
   threshold           = var.latency_threshold
-  alarm_description   = "ALB 응답 지연 시간(p95)이 ${var.latency_threshold}초를 초과했습니다"
+  alarm_description   = "10 분 내 2개의 데이터 포인트에 대한 TargetResponseTime > ${var.latency_threshold}"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     LoadBalancer = var.alb_arn_suffix
   }
 
   tags = {
-    Name = "${var.environment}-alb-latency-high"
+    Name = "${var.eks_cluster_name}-alb-latency-high"
   }
 }
 
 # Unhealthy Host Count
 resource "aws_cloudwatch_metric_alarm" "unhealthy_hosts" {
   count               = var.alb_name != "" && var.target_group_arn_suffix != "" ? 1 : 0
-  alarm_name          = "${var.environment}-unhealthy-hosts"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
+  alarm_name          = "${var.eks_cluster_name}-alb-unhealthy-host"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
   metric_name         = "UnHealthyHostCount"
   namespace           = "AWS/ApplicationELB"
-  period              = 60
+  period              = 300
   statistic           = "Average"
-  threshold           = 0
-  alarm_description   = "비정상 호스트가 감지되었습니다"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
+  threshold           = 1
+  alarm_description   = "5 분 내 1개의 데이터 포인트에 대한 UnHealthyHostCount >= 1"
+  alarm_actions       = []
+  ok_actions          = []
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     LoadBalancer  = var.alb_arn_suffix
@@ -392,7 +398,7 @@ resource "aws_cloudwatch_metric_alarm" "unhealthy_hosts" {
   }
 
   tags = {
-    Name = "${var.environment}-unhealthy-hosts"
+    Name = "${var.eks_cluster_name}-alb-unhealthy-host"
   }
 }
 
@@ -475,24 +481,25 @@ resource "aws_cloudwatch_metric_alarm" "rds_disk_queue_high" {
 # RDS CPU Utilization
 resource "aws_cloudwatch_metric_alarm" "rds_cpu_high" {
   count               = var.rds_instance_identifier != "" ? 1 : 0
-  alarm_name          = "${var.environment}-rds-cpu-high"
+  alarm_name          = "${var.rds_instance_identifier}-rds-cpu-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = 2
   metric_name         = "CPUUtilization"
   namespace           = "AWS/RDS"
   period              = 300
   statistic           = "Average"
   threshold           = var.cpu_threshold
-  alarm_description   = "RDS CPU 사용률이 ${var.cpu_threshold}%를 초과했습니다"
+  alarm_description   = "10 분 내 2개의 데이터 포인트에 대한 CPUUtilization > ${var.cpu_threshold}"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     DBInstanceIdentifier = var.rds_instance_identifier
   }
 
   tags = {
-    Name = "${var.environment}-rds-cpu-high"
+    Name = "${var.rds_instance_identifier}-rds-cpu-high"
   }
 }
 
@@ -501,15 +508,16 @@ resource "aws_cloudwatch_metric_alarm" "rds_read_latency_high" {
   count               = var.rds_instance_identifier != "" ? 1 : 0
   alarm_name          = "${var.rds_instance_identifier}-rds-read-latency-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = 2
   metric_name         = "ReadLatency"
   namespace           = "AWS/RDS"
   period              = 300
   extended_statistic  = "p90"
   threshold           = var.rds_latency_threshold
-  alarm_description   = "RDS Read Latency(p90)가 ${var.rds_latency_threshold}초를 초과했습니다"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
+  alarm_description   = "10 분 내 2개의 데이터 포인트에 대한 ReadLatency > ${var.rds_latency_threshold}"
+  alarm_actions       = []
+  ok_actions          = []
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     DBInstanceIdentifier = var.rds_instance_identifier
@@ -525,15 +533,16 @@ resource "aws_cloudwatch_metric_alarm" "rds_write_latency_high" {
   count               = var.rds_instance_identifier != "" ? 1 : 0
   alarm_name          = "${var.rds_instance_identifier}-rds-write-latency-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = 2
   metric_name         = "WriteLatency"
   namespace           = "AWS/RDS"
   period              = 300
   extended_statistic  = "p90"
   threshold           = var.rds_latency_threshold
-  alarm_description   = "RDS Write Latency(p90)가 ${var.rds_latency_threshold}초를 초과했습니다"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
+  alarm_description   = "10 분 내 2개의 데이터 포인트에 대한 WriteLatency > ${var.rds_latency_threshold}"
+  alarm_actions       = []
+  ok_actions          = []
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     DBInstanceIdentifier = var.rds_instance_identifier
@@ -555,9 +564,10 @@ resource "aws_cloudwatch_metric_alarm" "rds_memory_low" {
   period              = 300
   statistic           = "Average"
   threshold           = var.rds_freeable_memory_threshold
-  alarm_description   = "RDS Freeable Memory가 ${var.rds_freeable_memory_threshold / 1024 / 1024}MB 미만입니다"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
+  alarm_description   = "10 분 내 2개의 데이터 포인트에 대한 FreeableMemory < ${var.rds_freeable_memory_threshold}"
+  alarm_actions       = []
+  ok_actions          = []
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     DBInstanceIdentifier = var.rds_instance_identifier
@@ -574,53 +584,55 @@ resource "aws_cloudwatch_metric_alarm" "rds_memory_low" {
 
 # Pod CPU Utilization
 resource "aws_cloudwatch_metric_alarm" "pod_cpu_high" {
-  alarm_name          = "${var.environment}-pod-cpu-high"
+  alarm_name          = "${var.eks_cluster_name}-pod-cpu-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = 2
   metric_name         = "pod_cpu_utilization"
   namespace           = "ContainerInsights"
   period              = 300
   statistic           = "Average"
   threshold           = var.pod_cpu_threshold
-  alarm_description   = "Pod CPU 사용률이 ${var.pod_cpu_threshold}%를 초과했습니다"
+  alarm_description   = "10 분 내 2개의 데이터 포인트에 대한 pod_cpu_utilization > ${var.pod_cpu_threshold}"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     ClusterName = var.eks_cluster_name
   }
 
   tags = {
-    Name = "${var.environment}-pod-cpu-high"
+    Name = "${var.eks_cluster_name}-pod-cpu-high"
   }
 }
 
 # Pod Memory Utilization
 resource "aws_cloudwatch_metric_alarm" "pod_memory_high" {
-  alarm_name          = "${var.environment}-pod-memory-high"
+  alarm_name          = "${var.eks_cluster_name}-pod-memory-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = 2
   metric_name         = "pod_memory_utilization"
   namespace           = "ContainerInsights"
   period              = 300
   statistic           = "Average"
   threshold           = var.pod_memory_threshold
-  alarm_description   = "Pod 메모리 사용률이 ${var.pod_memory_threshold}%를 초과했습니다"
+  alarm_description   = "10 분 내 2개의 데이터 포인트에 대한 pod_memory_utilization > ${var.pod_memory_threshold}"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     ClusterName = var.eks_cluster_name
   }
 
   tags = {
-    Name = "${var.environment}-pod-memory-high"
+    Name = "${var.eks_cluster_name}-pod-memory-high"
   }
 }
 
 # Pod Restart Count (자동 복구 트리거)
 resource "aws_cloudwatch_metric_alarm" "pod_restart_high" {
-  alarm_name          = "${var.environment}-pod-restart-high"
+  alarm_name          = "${var.eks_cluster_name}-pod-restart-high"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "pod_number_of_container_restarts"
@@ -628,16 +640,17 @@ resource "aws_cloudwatch_metric_alarm" "pod_restart_high" {
   period              = 300
   statistic           = "Sum"
   threshold           = var.pod_restart_threshold
-  alarm_description   = "Pod 재시작 횟수가 ${var.pod_restart_threshold}회를 초과했습니다 - 자동 복구 필요"
+  alarm_description   = "5 분 내 1개의 데이터 포인트에 대한 pod_number_of_container_restarts > ${var.pod_restart_threshold}"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     ClusterName = var.eks_cluster_name
   }
 
   tags = {
-    Name = "${var.environment}-pod-restart-high"
+    Name = "${var.eks_cluster_name}-pod-restart-high"
   }
 }
 
@@ -647,47 +660,49 @@ resource "aws_cloudwatch_metric_alarm" "pod_restart_high" {
 
 # Container CPU Utilization
 resource "aws_cloudwatch_metric_alarm" "container_cpu_high" {
-  alarm_name          = "${var.environment}-container-cpu-high"
+  alarm_name          = "${var.eks_cluster_name}-container-cpu-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = 2
   metric_name         = "container_cpu_utilization"
   namespace           = "ContainerInsights"
   period              = 300
   statistic           = "Average"
   threshold           = var.container_cpu_threshold
-  alarm_description   = "컨테이너 CPU 사용률이 ${var.container_cpu_threshold}%를 초과했습니다"
+  alarm_description   = "10 분 내 2개의 데이터 포인트에 대한 container_cpu_utilization > ${var.container_cpu_threshold}"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     ClusterName = var.eks_cluster_name
   }
 
   tags = {
-    Name = "${var.environment}-container-cpu-high"
+    Name = "${var.eks_cluster_name}-container-cpu-high"
   }
 }
 
 # Container Memory Utilization
 resource "aws_cloudwatch_metric_alarm" "container_memory_high" {
-  alarm_name          = "${var.environment}-container-memory-high"
+  alarm_name          = "${var.eks_cluster_name}-container-memory-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = 2
   metric_name         = "container_memory_utilization"
   namespace           = "ContainerInsights"
   period              = 300
   statistic           = "Average"
   threshold           = var.container_memory_threshold
-  alarm_description   = "컨테이너 메모리 사용률이 ${var.container_memory_threshold}%를 초과했습니다"
+  alarm_description   = "10 분 내 2개의 데이터 포인트에 대한 container_memory_utilization > ${var.container_memory_threshold}"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     ClusterName = var.eks_cluster_name
   }
 
   tags = {
-    Name = "${var.environment}-container-memory-high"
+    Name = "${var.eks_cluster_name}-container-memory-high"
   }
 }
 
@@ -767,48 +782,50 @@ resource "aws_cloudwatch_metric_alarm" "service_count_low" {
 # Primary Health Check (AWS) 알람
 resource "aws_cloudwatch_metric_alarm" "route53_primary_health" {
   count               = var.enable_route53_monitoring && var.primary_health_check_id != "" ? 1 : 0
-  alarm_name          = "${var.environment}-route53-primary-unhealthy"
+  alarm_name          = "route53-primary-health-check-failed"
   comparison_operator = "LessThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = 1
   metric_name         = "HealthCheckStatus"
   namespace           = "AWS/Route53"
   period              = 60
   statistic           = "Minimum"
   threshold           = 1
-  alarm_description   = "Primary (AWS) Route53 Health Check 실패 - Failover 발생 가능"
+  alarm_description   = "1 분 내 1개의 데이터 포인트에 대한 HealthCheckStatus < 1"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     HealthCheckId = var.primary_health_check_id
   }
 
   tags = {
-    Name = "${var.environment}-route53-primary-unhealthy"
+    Name = "route53-primary-health-check-failed"
   }
 }
 
 # Secondary Health Check (Azure) 알람
 resource "aws_cloudwatch_metric_alarm" "route53_secondary_health" {
   count               = var.enable_route53_monitoring && var.secondary_health_check_id != "" ? 1 : 0
-  alarm_name          = "${var.environment}-route53-secondary-unhealthy"
+  alarm_name          = "route53-secondary-health-check-failed"
   comparison_operator = "LessThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = 1
   metric_name         = "HealthCheckStatus"
   namespace           = "AWS/Route53"
   period              = 60
   statistic           = "Minimum"
   threshold           = 1
-  alarm_description   = "Secondary (Azure) Route53 Health Check 실패 - DR 사이트 문제"
+  alarm_description   = "1 분 내 1개의 데이터 포인트에 대한 HealthCheckStatus < 1"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     HealthCheckId = var.secondary_health_check_id
   }
 
   tags = {
-    Name = "${var.environment}-route53-secondary-unhealthy"
+    Name = "route53-secondary-health-check-failed"
   }
 }
 
@@ -1046,6 +1063,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
         properties = {
           title  = "Node CPU Utilization"
           region = var.aws_region
+          view   = "gauge"
           metrics = [
             ["ContainerInsights", "node_cpu_utilization", "ClusterName", var.eks_cluster_name, { stat = "Average" }]
           ]
@@ -1071,6 +1089,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
         properties = {
           title  = "Node Memory Utilization"
           region = var.aws_region
+          view   = "gauge"
           metrics = [
             ["ContainerInsights", "node_memory_utilization", "ClusterName", var.eks_cluster_name, { stat = "Average" }]
           ]
@@ -1096,6 +1115,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
         properties = {
           title  = "Node Disk Utilization"
           region = var.aws_region
+          view   = "gauge"
           metrics = [
             ["ContainerInsights", "node_filesystem_utilization", "ClusterName", var.eks_cluster_name, { stat = "Average" }]
           ]
@@ -1121,6 +1141,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
         properties = {
           title  = "Node Count & Status"
           region = var.aws_region
+          view   = "singleValue"
           metrics = [
             ["ContainerInsights", "cluster_node_count", "ClusterName", var.eks_cluster_name, { stat = "Average", label = "Total Nodes" }],
             ["ContainerInsights", "cluster_failed_node_count", "ClusterName", var.eks_cluster_name, { stat = "Average", label = "Failed Nodes", color = "#ff0000" }]
@@ -1139,6 +1160,8 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
         properties = {
           title  = "EC2 Status Check Failed"
           region = var.aws_region
+          view   = "singleValue"
+          stacked = true
           metrics = [
             ["AWS/EC2", "StatusCheckFailed", { stat = "Sum", label = "Status Check Failed" }],
             ["AWS/EC2", "StatusCheckFailed_Instance", { stat = "Sum", label = "Instance Check Failed" }],
@@ -1168,12 +1191,20 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
         properties = {
           title  = "Pod CPU Utilization"
           region = var.aws_region
+          view   = "gauge"
           metrics = [
             ["ContainerInsights", "pod_cpu_utilization", "ClusterName", var.eks_cluster_name, { stat = "Average" }]
           ]
           period = 300
           yAxis = {
             left = { min = 0, max = 100 }
+          }
+          annotations = {
+            horizontal = [{
+              value = var.pod_cpu_threshold
+              label = "Threshold"
+              color = "#ff0000"
+            }]
           }
         }
       },
@@ -1186,12 +1217,20 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
         properties = {
           title  = "Pod Memory Utilization"
           region = var.aws_region
+          view   = "gauge"
           metrics = [
             ["ContainerInsights", "pod_memory_utilization", "ClusterName", var.eks_cluster_name, { stat = "Average" }]
           ]
           period = 300
           yAxis = {
             left = { min = 0, max = 100 }
+          }
+          annotations = {
+            horizontal = [{
+              value = var.pod_memory_threshold
+              label = "Threshold"
+              color = "#ff0000"
+            }]
           }
         }
       },
@@ -1352,6 +1391,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
         properties = {
           title  = "RDS CPU Utilization"
           region = var.aws_region
+          view   = "gauge"
           metrics = [
             ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "Average" }]
           ]
@@ -1482,7 +1522,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
         }
       },
 
-      # Row 8: Route53 Health Check Metrics
+      # Row 7.7: RDS Enhanced Monitoring
       {
         type   = "text"
         x      = 0
@@ -1490,7 +1530,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
         width  = 24
         height = 1
         properties = {
-          markdown = "## Route53 Health Check & Failover Status"
+          markdown = "## 🔍 RDS Enhanced Monitoring (OS-Level Metrics)"
         }
       },
       {
@@ -1500,8 +1540,143 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
         width  = 8
         height = 6
         properties = {
+          title  = "RDS Read/Write IOPS"
+          region = var.aws_region
+          metrics = [
+            ["AWS/RDS", "ReadIOPS", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "Average", label = "Read IOPS", color = "#2ca02c" }],
+            ["AWS/RDS", "WriteIOPS", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "Average", label = "Write IOPS", color = "#ff9900" }]
+          ]
+          period = 60
+          yAxis = {
+            left = { min = 0 }
+          }
+        }
+      },
+      {
+        type   = "metric"
+        x      = 8
+        y      = 44
+        width  = 8
+        height = 6
+        properties = {
+          title  = "RDS Read/Write Throughput"
+          region = var.aws_region
+          metrics = [
+            ["AWS/RDS", "ReadThroughput", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "Average", label = "Read Throughput", color = "#2ca02c" }],
+            ["AWS/RDS", "WriteThroughput", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "Average", label = "Write Throughput", color = "#ff9900" }]
+          ]
+          period = 60
+          yAxis = {
+            left = { min = 0 }
+          }
+        }
+      },
+      {
+        type   = "metric"
+        x      = 16
+        y      = 44
+        width  = 8
+        height = 6
+        properties = {
+          title  = "RDS Network Throughput"
+          region = var.aws_region
+          metrics = [
+            ["AWS/RDS", "NetworkReceiveThroughput", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "Average", label = "Network RX", color = "#2ca02c" }],
+            ["AWS/RDS", "NetworkTransmitThroughput", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "Average", label = "Network TX", color = "#ff9900" }]
+          ]
+          period = 60
+          yAxis = {
+            left = { min = 0 }
+          }
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 50
+        width  = 8
+        height = 6
+        properties = {
+          title  = "RDS Database Connections"
+          region = var.aws_region
+          view   = "timeSeries"
+          metrics = [
+            ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "Average", label = "Active Connections" }]
+          ]
+          period = 60
+          yAxis = {
+            left = { min = 0 }
+          }
+          annotations = {
+            horizontal = [{
+              value = var.rds_connections_threshold
+              label = "Threshold"
+              color = "#ff0000"
+            }]
+          }
+        }
+      },
+      {
+        type   = "metric"
+        x      = 8
+        y      = 50
+        width  = 8
+        height = 6
+        properties = {
+          title  = "RDS Swap Usage"
+          region = var.aws_region
+          view   = "timeSeries"
+          metrics = [
+            ["AWS/RDS", "SwapUsage", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "Average", label = "Swap Usage" }]
+          ]
+          period = 60
+          yAxis = {
+            left = { min = 0 }
+          }
+        }
+      },
+      {
+        type   = "metric"
+        x      = 16
+        y      = 50
+        width  = 8
+        height = 6
+        properties = {
+          title  = "RDS LVM IOPS"
+          region = var.aws_region
+          metrics = [
+            ["AWS/RDS", "LVMReadIOPS", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "Average", label = "LVM Read IOPS", color = "#2ca02c" }],
+            ["AWS/RDS", "LVMWriteIOPS", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "Average", label = "LVM Write IOPS", color = "#ff9900" }]
+          ]
+          period = 60
+          yAxis = {
+            left = { min = 0 }
+          }
+        }
+      },
+
+      # Row 8: Route53 Health Check Metrics
+      {
+        type   = "text"
+        x      = 0
+        y      = 56
+        width  = 24
+        height = 1
+        properties = {
+          markdown = "## Route53 Health Check & Failover Status"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 57
+        width  = 8
+        height = 6
+        properties = {
           title  = "Primary (AWS) Health Check Status"
           region = "us-east-1"
+          view   = "singleValue"
+          stacked = true
           metrics = var.primary_health_check_id != "" ? [
             ["AWS/Route53", "HealthCheckStatus", "HealthCheckId", var.primary_health_check_id, { stat = "Minimum", label = "Health Status (1=Healthy)", color = "#2ca02c" }]
           ] : []
@@ -1509,13 +1684,12 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
           yAxis = {
             left = { min = 0, max = 1 }
           }
-          view = "singleValue"
         }
       },
       {
         type   = "metric"
         x      = 8
-        y      = 44
+        y      = 57
         width  = 8
         height = 6
         properties = {
@@ -1534,7 +1708,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       {
         type   = "metric"
         x      = 16
-        y      = 44
+        y      = 57
         width  = 8
         height = 6
         properties = {
@@ -1567,7 +1741,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       {
         type   = "text"
         x      = 0
-        y      = 50
+        y      = 63
         width  = 24
         height = 1
         properties = {
@@ -1577,7 +1751,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       {
         type   = "metric"
         x      = 0
-        y      = 51
+        y      = 64
         width  = 6
         height = 6
         properties = {
@@ -1603,7 +1777,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       {
         type   = "metric"
         x      = 6
-        y      = 51
+        y      = 64
         width  = 6
         height = 6
         properties = {
@@ -1629,7 +1803,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       {
         type   = "metric"
         x      = 12
-        y      = 51
+        y      = 64
         width  = 6
         height = 6
         properties = {
@@ -1645,7 +1819,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       {
         type   = "metric"
         x      = 18
-        y      = 51
+        y      = 64
         width  = 6
         height = 6
         properties = {

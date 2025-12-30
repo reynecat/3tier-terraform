@@ -93,3 +93,15 @@ eks-dev-cluster-node-cpu-high
 2025-12-26 01:18:12
 10 분 내 2개의 데이터 포인트에 대한 node_cpu_utilization > 80
 작업이 활성화됨
+
+route53-primary-health-check-failed
+경보 상태
+2025-12-28 02:42:56
+1 분 내 1개의 데이터 포인트에 대한 HealthCheckStatus < 1
+작업이 활성화됨
+route53-secondary-health-check-failed
+정상
+2025-12-26 05:15:51
+1 분 내 1개의 데이터 포인트에 대한 HealthCheckStatus < 1
+작업이 활성화됨
+
