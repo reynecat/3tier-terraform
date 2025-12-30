@@ -1,0 +1,25 @@
+## TL;DR
+
+- 이번 프로젝트에서 Azure는 보조 CSP로 활용되며 , AWS에 장애가 발생했을 때 failover를 담당함
+- 코드의 재사용성과 배포 속도, 유지보수 편의성을 고려해서 terraform으로 2개의 모듈(Always와  emergency)로 나누어서 작성함
+
+service flow (route53, cloudfront, cloudwatch가 정상이라는 가정)
+
+사용자가 도메인 접속 → 펫클리닉 정상 작동 → AWS에 장애 발생 → error 발생 → slack으로 알람 
+→ 시스템 점검 웹페이지로 failover → 관리자 서버에서 사전에 terraformy 실행 
+→ 사전에 만들어놓은 스크립트로 최신 mysqldump를 azure database에 복원
+→ 서비스 상태 확인 후 수동으로 cloudfront origins를 수정해서 appgateway로 트래픽 전환
+→ AWS에서 정상으로 돌아오면 DMS로 azure database와 RDS를 동기화 (미구현)
+→ AWS로 트래픽 전환 후 cloudfront origins를 원래 설정으로 복귀 (미구현)
+
+## Terraform 코드 구성
+
+### 1. Always
+
+- blob storage account(general-purpose v2) 1개, blob storage container 2개, Vnet 예약
+- container 하나에는 AWS RDS를 dump한 백업파일들이 저장되고, 또 다른 컨테이너에는 시스템 점검 정적 웹페이지가 저장되어 있음
+- cloudfront에서 AWS ALB 헬스체크에 실패하면, 자동으로 blob storage container에 있는 웹페이지로 트래픽이 이동한다.
+
+### 2. emergency
+
+- emergency 모듈에는 Appgateway, AKS, Azure database for MySQL flexible servers가 terraform apply 명령어가 실행되면 배포되도록 작성되어 있음

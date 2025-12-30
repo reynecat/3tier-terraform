@@ -119,6 +119,25 @@ variable "was_node_max_count" {
   default     = 5
 }
 
+# Application Gateway 설정
+variable "backend_ip_addresses" {
+  description = "Application Gateway Backend IP 주소 리스트"
+  type        = list(string)
+  default     = ["20.214.124.157"]
+}
+
+variable "backend_port" {
+  description = "Application Gateway Backend Port"
+  type        = number
+  default     = 8080
+}
+
+variable "health_probe_path" {
+  description = "Application Gateway Health Probe Path"
+  type        = string
+  default     = "/"
+}
+
 variable "tags" {
   description = "리소스 태그"
   type        = map(string)
