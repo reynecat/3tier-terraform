@@ -182,7 +182,7 @@ resource "aws_instance" "backup_instance" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = "t3.small"  # 2 vCPU, 2GB RAM
 
-  subnet_id                   = module.vpc.was_subnet_ids[0]  # Private 서브넷
+  subnet_id                   = module.vpc.was_subnet_ids[1]  # Private 서브넷 (ap-northeast-2c, RDS와 동일 AZ)
   vpc_security_group_ids      = [aws_security_group.backup_instance.id]
   iam_instance_profile        = aws_iam_instance_profile.backup_instance.name
   key_name                    = aws_key_pair.backup_instance.key_name

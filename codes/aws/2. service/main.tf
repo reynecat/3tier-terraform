@@ -82,23 +82,27 @@ module "eks" {
 
 module "rds" {
   source = "./modules/rds"
-  
+
   environment                = var.environment
   vpc_id                     = module.vpc.vpc_id
   subnet_ids                 = module.vpc.rds_subnet_ids
   eks_security_group_id      = module.eks.cluster_security_group_id
-  
+
   database_name              = var.db_name
   master_username            = var.db_username
   master_password            = "byemyblue"
-  
+
   instance_class             = var.rds_instance_class
   allocated_storage          = var.rds_allocated_storage
   max_allocated_storage      = var.rds_max_allocated_storage
-  
+
   multi_az                   = var.rds_multi_az
   skip_final_snapshot        = var.rds_skip_final_snapshot
   deletion_protection        = var.rds_deletion_protection
+
+  # Enhanced Monitoring 활성화
+  enhanced_monitoring_enabled = true
+  monitoring_interval         = 60  # 60초 간격으로 수집
 }
 
 
