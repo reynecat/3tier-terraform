@@ -1,0 +1,102 @@
+# aws/monitoring/terraform.tfvars.example
+# EKS 모니터링 설정 값 템플릿
+#
+# 이 파일을 복사하여 terraform.tfvars로 사용하세요:
+# cp terraform.tfvars.example terraform.tfvars
+
+# =================================================
+# General Settings
+# =================================================
+
+aws_region         = "ap-northeast-2"
+environment        = "blue"  # dev, staging, prod, blue 등
+alert_email        = "your-email@example.com"  # 알람 수신 이메일 주소
+log_retention_days = 30  # CloudWatch 로그 보존 기간 (일)
+
+# =================================================
+# Slack Integration Settings (선택사항)
+# =================================================
+# AWS Chatbot 콘솔에서 Slack 워크스페이스 연동 후 설정
+# https://console.aws.amazon.com/chatbot/
+
+slack_workspace_id = ""  # Slack Workspace ID (예: T01234567)
+slack_channel_id   = ""  # Slack Channel ID (예: C01234567)
+
+# =================================================
+# EKS Cluster Settings
+# =================================================
+
+eks_cluster_name = "blue-eks"  # EKS 클러스터 이름
+min_node_count   = 2  # 최소 노드 수 (이 값 미만시 알람)
+
+# =================================================
+# ALB Settings
+# =================================================
+# aws elbv2 describe-load-balancers --region ap-northeast-2 로 확인
+
+alb_name                = "k8s-web-webingre-5d0cf16a97"
+alb_arn_suffix          = "app/k8s-web-webingre-5d0cf16a97/f8a712c9e4a3be6e"
+target_group_arn_suffix = "targetgroup/k8s-web-webservi-b96d9cd45c/71821f98ac222aa1"
+
+# =================================================
+# RDS Settings
+# =================================================
+
+rds_instance_identifier = "blue-rds"  # RDS 인스턴스 식별자
+
+# =================================================
+# Threshold Settings - Node Level
+# =================================================
+
+cpu_threshold    = 80  # CPU 사용률 80% 초과시 알람
+memory_threshold = 80  # 메모리 사용률 80% 초과시 알람
+disk_threshold   = 80  # 디스크 사용률 80% 초과시 알람
+
+# =================================================
+# Threshold Settings - Pod Level
+# =================================================
+
+pod_cpu_threshold     = 85  # Pod CPU 85% 초과시 알람
+pod_memory_threshold  = 85  # Pod 메모리 85% 초과시 알람
+pod_restart_threshold = 5   # Pod 재시작 5회 초과시 자동 복구 트리거
+
+# =================================================
+# Threshold Settings - ALB
+# =================================================
+
+surge_queue_threshold = 100   # Surge Queue 100 초과시 알람
+http_5xx_threshold    = 10    # 5XX 에러 10회 초과시 알람
+latency_threshold     = 2.5   # 응답 지연 2.5초 초과시 알람
+
+# =================================================
+# Threshold Settings - RDS
+# =================================================
+
+rds_storage_threshold         = 10           # 여유 스토리지 10GB 미만시 알람
+rds_connections_threshold     = 120          # 연결 수 120개 초과시 알람
+rds_disk_queue_threshold      = 10           # 디스크 큐 깊이 10 초과시 알람
+rds_latency_threshold         = 0.1          # Read/Write Latency 100ms 초과시 알람
+rds_freeable_memory_threshold = 268435456    # Freeable Memory 256MB 미만시 알람
+
+# =================================================
+# Route53 Health Check Settings
+# =================================================
+
+enable_route53_monitoring = true
+domain_name               = "blueisthenewblack.store"
+
+# Route53 Health Check ID 확인 방법:
+# aws route53 list-health-checks --region us-east-1
+primary_health_check_id   = ""  # Primary (CloudFront) Health Check ID
+secondary_health_check_id = ""  # Secondary (Azure Blob) Health Check ID
+aws_alb_health_check_id   = ""  # AWS ALB Direct Health Check ID
+
+# =================================================
+# Threshold Settings - Container Level
+# =================================================
+
+container_cpu_threshold    = 80          # 컨테이너 CPU 80% 초과시 알람
+container_memory_threshold = 80          # 컨테이너 메모리 80% 초과시 알람
+pod_network_rx_threshold   = 100000000   # Pod 수신 100MB/s 초과시 알람
+pod_network_tx_threshold   = 100000000   # Pod 송신 100MB/s 초과시 알람
+service_count_threshold    = 1           # 최소 서비스 Pod 수

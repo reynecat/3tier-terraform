@@ -108,37 +108,60 @@ output "monitoring_commands" {
 }
 
 # =================================================
+# Route53 Health Check Outputs
+# =================================================
+
+output "health_check_ids" {
+  description = "Route53 Health Check ID 목록"
+  value = var.enable_custom_domain ? {
+    aws_alb_health_check_id      = length(aws_route53_health_check.aws_alb) > 0 ? aws_route53_health_check.aws_alb[0].id : ""
+    cloudfront_health_check_id   = length(aws_route53_health_check.cloudfront) > 0 ? aws_route53_health_check.cloudfront[0].id : ""
+    azure_blob_health_check_id   = length(aws_route53_health_check.azure_blob) > 0 ? aws_route53_health_check.azure_blob[0].id : ""
+  } : {}
+}
+
+output "health_check_config" {
+  description = "Route53 Health Check 구성 정보"
+  value = var.enable_custom_domain ? {
+    aws_alb = length(aws_route53_health_check.aws_alb) > 0 ? {
+      id       = aws_route53_health_check.aws_alb[0].id
+      fqdn     = local.alb_dns_name
+      type     = "HTTP"
+      port     = 80
+      purpose  = "AWS ALB 직접 모니터링 (페일오버 감지용)"
+    } : null
+    cloudfront = length(aws_route53_health_check.cloudfront) > 0 ? {
+      id       = aws_route53_health_check.cloudfront[0].id
+      fqdn     = var.domain_name
+      type     = "HTTPS_STR_MATCH"
+      port     = 443
+      purpose  = "CloudFront End-to-End 모니터링"
+    } : null
+    azure_blob = length(aws_route53_health_check.azure_blob) > 0 ? {
+      id       = aws_route53_health_check.azure_blob[0].id
+      fqdn     = "${var.azure_storage_account_name}.z12.web.core.windows.net"
+      type     = "HTTPS"
+      port     = 443
+      purpose  = "Azure Blob Storage 백업 사이트 모니터링"
+    } : null
+  } : {}
+}
+
+output "health_check_commands" {
+  description = "Health Check 관리 명령어"
+  value = var.enable_custom_domain && length(aws_route53_health_check.aws_alb) > 0 ? {
+    check_aws_status     = "aws route53 get-health-check-status --health-check-id ${aws_route53_health_check.aws_alb[0].id}"
+    check_cloudfront_status = length(aws_route53_health_check.cloudfront) > 0 ? "aws route53 get-health-check-status --health-check-id ${aws_route53_health_check.cloudfront[0].id}" : ""
+    check_azure_status   = length(aws_route53_health_check.azure_blob) > 0 ? "aws route53 get-health-check-status --health-check-id ${aws_route53_health_check.azure_blob[0].id}" : ""
+    list_all_checks      = "aws route53 list-health-checks"
+  } : {}
+}
+
+# =================================================
 # 배포 요약
 # =================================================
 
 output "deployment_summary" {
   description = "배포 요약 정보"
-  value = var.enable_custom_domain && local.alb_dns_name != null ? <<-EOT
-
-  ╔════════════════════════════════════════════════════════════════╗
-  ║          CloudFront + Route53 배포 완료                        ║
-  ╚════════════════════════════════════════════════════════════════╝
-
-  🌐 Domain:           ${var.domain_name}
-  📡 CloudFront ID:    ${aws_cloudfront_distribution.main[0].id}
-  🔗 CloudFront URL:   ${aws_cloudfront_distribution.main[0].domain_name}
-  ✅ Status:           ${aws_cloudfront_distribution.main[0].status}
-
-  🎯 Origin Failover:
-     Primary (AWS):    ${local.alb_dns_name}
-     Secondary (Azure): ${var.azure_storage_account_name}.z12.web.core.windows.net
-     Failover Codes:   500, 502, 503, 504
-
-  🔐 SSL Certificate:
-     Status:           ${length(data.aws_acm_certificate.main) > 0 ? "Enabled" : "Not configured"}
-     ${length(data.aws_acm_certificate.main) > 0 ? "ARN:              ${data.aws_acm_certificate.main[0].arn}" : ""}
-
-  📝 다음 단계:
-     1. DNS 전파 확인: dig ${var.domain_name}
-     2. 접속 테스트:   curl -I https://${var.domain_name}
-     3. 캐시 삭제:     aws cloudfront create-invalidation --distribution-id ${aws_cloudfront_distribution.main[0].id} --paths '/*'
-
-  ⚠️  CloudFront 배포 완료까지 약 15-20분 소요됩니다.
-  EOT
-  : "Custom domain is disabled or ALB not configured. Please check terraform.tfvars."
+  value = var.enable_custom_domain && local.alb_dns_name != null ? "CloudFront + Route53 deployment completed" : "Custom domain is disabled or ALB not configured. Please check terraform.tfvars."
 }

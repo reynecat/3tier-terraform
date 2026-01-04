@@ -15,31 +15,85 @@ resource "null_resource" "cleanup_k8s_resources" {
   triggers = {
     cluster_name = "${var.environment}-eks"
     vpc_id       = var.vpc_id
+    region       = var.region
   }
 
   provisioner "local-exec" {
-    when    = destroy
-    command = <<-EOT
-      echo "Cleaning up Kubernetes-created AWS resources..."
+    when        = destroy
+    interpreter = ["/bin/bash", "-c"]
+    on_failure  = continue
+    command     = <<-BASH
+      set -e
+      echo "=== Starting cleanup of Kubernetes-created AWS resources ==="
 
-      # VPC 내 ALB/NLB 삭제
-      for lb_arn in $(aws elbv2 describe-load-balancers --query "LoadBalancers[?VpcId=='${self.triggers.vpc_id}'].LoadBalancerArn" --output text 2>/dev/null); do
-        echo "Deleting Load Balancer: $lb_arn"
-        aws elbv2 delete-load-balancer --load-balancer-arn "$lb_arn" 2>/dev/null || true
-      done
+      VPC_ID="${self.triggers.vpc_id}"
+      REGION="${self.triggers.region}"
 
-      # ALB 삭제 완료 대기 (최대 5분)
-      echo "Waiting for Load Balancers to be deleted..."
-      sleep 30
+      # 1. VPC 내 모든 Load Balancer 조회 및 삭제
+      echo "Step 1: Deleting Load Balancers in VPC $VPC_ID..."
+      LB_ARNS=$(aws elbv2 describe-load-balancers \
+        --region "$REGION" \
+        --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" \
+        --output text 2>/dev/null || echo "")
 
-      # VPC 내 Target Group 삭제
-      for tg_arn in $(aws elbv2 describe-target-groups --query "TargetGroups[?VpcId=='${self.triggers.vpc_id}'].TargetGroupArn" --output text 2>/dev/null); do
-        echo "Deleting Target Group: $tg_arn"
-        aws elbv2 delete-target-group --target-group-arn "$tg_arn" 2>/dev/null || true
-      done
+      if [ -n "$LB_ARNS" ]; then
+        for lb_arn in $LB_ARNS; do
+          echo "  - Deleting Load Balancer: $lb_arn"
+          aws elbv2 delete-load-balancer \
+            --region "$REGION" \
+            --load-balancer-arn "$lb_arn" 2>/dev/null || true
+        done
 
-      echo "Cleanup completed."
-    EOT
+        # ALB/NLB 삭제 대기
+        echo "  - Waiting for Load Balancers to be deleted (30s)..."
+        sleep 30
+      else
+        echo "  - No Load Balancers found"
+      fi
+
+      # 2. VPC 내 모든 Target Group 삭제
+      echo "Step 2: Deleting Target Groups in VPC $VPC_ID..."
+      TG_ARNS=$(aws elbv2 describe-target-groups \
+        --region "$REGION" \
+        --query "TargetGroups[?VpcId=='$VPC_ID'].TargetGroupArn" \
+        --output text 2>/dev/null || echo "")
+
+      if [ -n "$TG_ARNS" ]; then
+        for tg_arn in $TG_ARNS; do
+          echo "  - Deleting Target Group: $tg_arn"
+          aws elbv2 delete-target-group \
+            --region "$REGION" \
+            --target-group-arn "$tg_arn" 2>/dev/null || true
+        done
+      else
+        echo "  - No Target Groups found"
+      fi
+
+      # 3. VPC 내 모든 ENI (Elastic Network Interface) 정리
+      echo "Step 3: Cleaning up Network Interfaces in VPC $VPC_ID..."
+      ENI_IDS=$(aws ec2 describe-network-interfaces \
+        --region "$REGION" \
+        --filters "Name=vpc-id,Values=$VPC_ID" \
+        --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" \
+        --output text 2>/dev/null || echo "")
+
+      if [ -n "$ENI_IDS" ]; then
+        for eni_id in $ENI_IDS; do
+          echo "  - Deleting ENI: $eni_id"
+          aws ec2 delete-network-interface \
+            --region "$REGION" \
+            --network-interface-id "$eni_id" 2>/dev/null || true
+        done
+      else
+        echo "  - No available ENIs found"
+      fi
+
+      # 4. Security Group 정리 대기
+      echo "Step 4: Waiting for dependent resources to be fully deleted (20s)..."
+      sleep 20
+
+      echo "=== Cleanup completed ==="
+    BASH
   }
 }
 

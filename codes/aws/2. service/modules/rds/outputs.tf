@@ -34,3 +34,8 @@ output "db_port" {
   description = "데이터베이스 포트"
   value       = aws_db_instance.main.port
 }
+
+output "db_availability_zone" {
+  description = "RDS 인스턴스 가용영역"
+  value       = aws_db_instance.main.availability_zone
+}

@@ -102,6 +102,7 @@ output "alarm_arns" {
     # Route53 Health Check
     route53_primary_health   = var.enable_route53_monitoring && var.primary_health_check_id != "" ? aws_cloudwatch_metric_alarm.route53_primary_health[0].arn : null
     route53_secondary_health = var.enable_route53_monitoring && var.secondary_health_check_id != "" ? aws_cloudwatch_metric_alarm.route53_secondary_health[0].arn : null
+    route53_aws_alb_health   = var.enable_route53_monitoring && var.aws_alb_health_check_id != "" ? aws_cloudwatch_metric_alarm.route53_aws_alb_health[0].arn : null
   }
 }
 
@@ -112,11 +113,12 @@ output "alarm_arns" {
 output "route53_alarms" {
   description = "Route53 Health Check 알람 정보"
   value = {
-    primary_health_alarm     = var.enable_route53_monitoring && var.primary_health_check_id != "" ? aws_cloudwatch_metric_alarm.route53_primary_health[0].arn : null
-    secondary_health_alarm   = var.enable_route53_monitoring && var.secondary_health_check_id != "" ? aws_cloudwatch_metric_alarm.route53_secondary_health[0].arn : null
-    primary_percentage_alarm = var.enable_route53_monitoring && var.primary_health_check_id != "" ? aws_cloudwatch_metric_alarm.route53_primary_percentage[0].arn : null
+    primary_health_alarm       = var.enable_route53_monitoring && var.primary_health_check_id != "" ? aws_cloudwatch_metric_alarm.route53_primary_health[0].arn : null
+    secondary_health_alarm     = var.enable_route53_monitoring && var.secondary_health_check_id != "" ? aws_cloudwatch_metric_alarm.route53_secondary_health[0].arn : null
+    aws_alb_health_alarm       = var.enable_route53_monitoring && var.aws_alb_health_check_id != "" ? aws_cloudwatch_metric_alarm.route53_aws_alb_health[0].arn : null
+    primary_percentage_alarm   = var.enable_route53_monitoring && var.primary_health_check_id != "" ? aws_cloudwatch_metric_alarm.route53_primary_percentage[0].arn : null
     secondary_percentage_alarm = var.enable_route53_monitoring && var.secondary_health_check_id != "" ? aws_cloudwatch_metric_alarm.route53_secondary_percentage[0].arn : null
-    all_sites_down_alarm     = var.enable_route53_monitoring && var.primary_health_check_id != "" && var.secondary_health_check_id != "" ? aws_cloudwatch_composite_alarm.all_sites_down[0].arn : null
+    all_sites_down_alarm       = var.enable_route53_monitoring && var.primary_health_check_id != "" && var.secondary_health_check_id != "" ? aws_cloudwatch_composite_alarm.all_sites_down[0].arn : null
   }
 }
 

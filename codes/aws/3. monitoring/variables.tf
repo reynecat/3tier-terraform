@@ -214,6 +214,12 @@ variable "secondary_health_check_id" {
   default     = ""
 }
 
+variable "aws_alb_health_check_id" {
+  description = "AWS ALB Direct Route53 Health Check ID (페일오버 감지용)"
+  type        = string
+  default     = ""
+}
+
 variable "domain_name" {
   description = "모니터링 대상 도메인 이름"
   type        = string

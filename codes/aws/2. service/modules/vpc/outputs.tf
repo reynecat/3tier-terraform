@@ -44,3 +44,16 @@ output "internet_gateway_id" {
   description = "Internet Gateway ID"
   value       = aws_internet_gateway.main.id
 }
+
+output "availability_zones" {
+  description = "사용 중인 가용영역 리스트"
+  value       = var.availability_zones
+}
+
+output "was_subnets_by_az" {
+  description = "WAS 서브넷 ID를 AZ별로 매핑"
+  value = zipmap(
+    aws_subnet.was[*].availability_zone,
+    aws_subnet.was[*].id
+  )
+}

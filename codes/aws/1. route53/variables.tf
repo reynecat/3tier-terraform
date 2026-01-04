@@ -68,3 +68,13 @@ variable "azure_appgw_public_ip" {
   type        = string
   default     = ""
 }
+
+# =================================================
+# Health Check Settings
+# =================================================
+
+variable "health_check_search_string" {
+  description = "헬스체크에서 찾을 문자열 (HTTPS_STR_MATCH용)"
+  type        = string
+  default     = "PetClinic"
+}

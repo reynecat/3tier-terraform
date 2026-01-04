@@ -182,7 +182,9 @@ resource "aws_instance" "backup_instance" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = "t3.small"  # 2 vCPU, 2GB RAM
 
-  subnet_id                   = module.vpc.was_subnet_ids[1]  # Private 서브넷 (ap-northeast-2c, RDS와 동일 AZ)
+  # RDS와 동일한 AZ의 WAS 서브넷에 배치
+  subnet_id                   = module.vpc.was_subnets_by_az[module.rds.db_availability_zone]
+  availability_zone           = module.rds.db_availability_zone
   vpc_security_group_ids      = [aws_security_group.backup_instance.id]
   iam_instance_profile        = aws_iam_instance_profile.backup_instance.name
   key_name                    = aws_key_pair.backup_instance.key_name
@@ -282,15 +284,18 @@ resource "aws_cloudwatch_metric_alarm" "backup_instance_status" {
 output "backup_summary" {
   description = "백업 설정 요약"
   value = <<-EOT
-  
+
   ╔════════════════════════════════════════════════╗
   ║     Backup Instance (Plan B - Pilot Light)     ║
   ╚════════════════════════════════════════════════╝
-  
+
   인스턴스:
     - ID: ${aws_instance.backup_instance.id}
     - Type: t3.small (2 vCPU, 2GB RAM)
     - Private IP: ${aws_instance.backup_instance.private_ip}
+    - Availability Zone: ${aws_instance.backup_instance.availability_zone}
+    - RDS AZ: ${module.rds.db_availability_zone}
+    - ✅ Same AZ as RDS: ${aws_instance.backup_instance.availability_zone == module.rds.db_availability_zone ? "YES" : "NO"}
     - 비용: ~$15/월
   
   백업 설정:

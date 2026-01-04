@@ -23,3 +23,11 @@ service flow (route53, cloudfront, cloudwatch가 정상이라는 가정)
 ### 2. emergency
 
 - emergency 모듈에는 Appgateway, AKS, Azure database for MySQL flexible servers가 terraform apply 명령어가 실행되면 배포되도록 작성되어 있음
+
+
+
+4페이지 - 오른쪽 타이완 사진 빼기, 중간 프로젝트 수치를 왼쪽, 이번 프로젝트 수치를 오른쪽, 
+
+5페이지, 13페이지 -> 왜 EC2 -> EKS를 사용했나? -> 시간의 흐름으로 동물병원 그룹 폭발적 성장, EC2로는 감당 안돼
+
+카나리 배포는 

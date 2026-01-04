@@ -208,6 +208,70 @@ resource "aws_cloudfront_distribution" "main" {
 }
 
 # =================================================
+# Route53 Health Checks
+# =================================================
+
+# Health Check for AWS ALB (Direct)
+resource "aws_route53_health_check" "aws_alb" {
+  count = var.enable_custom_domain && local.alb_dns_name != null ? 1 : 0
+
+  fqdn              = local.alb_dns_name
+  port              = 80
+  type              = "HTTP"
+  resource_path     = "/"
+  failure_threshold = 3
+  request_interval  = 30
+  measure_latency   = true
+
+  tags = {
+    Name        = "${var.environment}-aws-alb-health-check"
+    Environment = var.environment
+    Purpose     = "AWS-ALB-Direct-Monitoring"
+  }
+}
+
+# Health Check for CloudFront (End-to-End)
+resource "aws_route53_health_check" "cloudfront" {
+  count = var.enable_custom_domain && var.domain_name != "" ? 1 : 0
+
+  fqdn              = var.domain_name
+  port              = 443
+  type              = "HTTPS_STR_MATCH"
+  resource_path     = "/"
+  search_string     = var.health_check_search_string
+  failure_threshold = 3
+  request_interval  = 30
+  measure_latency   = true
+  enable_sni        = true
+
+  tags = {
+    Name        = "${var.environment}-cloudfront-health-check"
+    Environment = var.environment
+    Purpose     = "CloudFront-End-to-End-Monitoring"
+  }
+}
+
+# Health Check for Azure Blob Storage (Secondary)
+resource "aws_route53_health_check" "azure_blob" {
+  count = var.enable_custom_domain && var.azure_storage_account_name != "" ? 1 : 0
+
+  fqdn              = "${var.azure_storage_account_name}.z12.web.core.windows.net"
+  port              = 443
+  type              = "HTTPS"
+  resource_path     = "/"
+  failure_threshold = 3
+  request_interval  = 30
+  measure_latency   = true
+  enable_sni        = true
+
+  tags = {
+    Name        = "${var.environment}-azure-blob-health-check"
+    Environment = var.environment
+    Purpose     = "Azure-Blob-Storage-Monitoring"
+  }
+}
+
+# =================================================
 # Route53 Record - CloudFront Alias
 # =================================================
 

@@ -1,4 +1,4 @@
-#!/bin/bash
+ #!/bin/bash
 # PlanB/azure/2-emergency/restore-db.sh
 # MySQL 백업 복구 스크립트 (하드코딩 버전)
 

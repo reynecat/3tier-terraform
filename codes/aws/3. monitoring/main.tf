@@ -2,8 +2,8 @@
 # EKS 컨테이너 모니터링 및 자동 복구 설정
 #
 # 참고: Container Insights 메트릭 수집은 EKS 모듈의
-# amazon-cloudwatch-observability 애드온에서 자동으로 처리됩니다.
-# 이 모듈은 수집된 메트릭을 기반으로 알람, 대시보드, 자동 복구만 설정합니다.
+# amazon-cloudwatch-observability 애드온에서 자동으로 처리
+# 이 모듈은 수집된 메트릭을 기반으로 알람, 대시보드, 자동 복구만 설정
 
 terraform {
   required_version = ">= 1.14.0"
@@ -12,6 +12,10 @@ terraform {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 6.0"
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
     }
   }
 }
@@ -25,6 +29,21 @@ provider "aws" {
       Project     = "Multi-Cloud-DR"
       ManagedBy   = "Terraform"
       Component   = "Monitoring"
+    }
+  }
+}
+
+# Route53 metrics are only available in us-east-1
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+
+  default_tags {
+    tags = {
+      Environment = var.environment
+      Project     = "Multi-Cloud-DR"
+      ManagedBy   = "Terraform"
+      Component   = "Monitoring-Route53"
     }
   }
 }
@@ -65,11 +84,30 @@ resource "aws_sns_topic" "alerts" {
   }
 }
 
+# SNS Topic for Route53 Health Check Alerts (us-east-1)
+resource "aws_sns_topic" "route53_alerts" {
+  provider = aws.us_east_1
+  name     = "${var.environment}-route53-health-alerts"
+
+  tags = {
+    Name = "${var.environment}-route53-health-alerts"
+  }
+}
+
+# Email subscription for Route53 alerts
+resource "aws_sns_topic_subscription" "route53_email" {
+  provider  = aws.us_east_1
+  count     = var.alert_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.route53_alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
 # =================================================
 # Slack Integration via AWS Chatbot
 # =================================================
 
-# Slack 채널 구성을 위한 AWS Chatbot 설정
+# Slack 채널 구성을 위한 AWS Chatbot 설정 (ap-northeast-2)
 resource "aws_chatbot_slack_channel_configuration" "alerts" {
   count                  = var.slack_workspace_id != "" && var.slack_channel_id != "" ? 1 : 0
   configuration_name     = "${var.environment}-eks-monitoring-slack"
@@ -81,6 +119,22 @@ resource "aws_chatbot_slack_channel_configuration" "alerts" {
 
   tags = {
     Name = "${var.environment}-eks-monitoring-slack"
+  }
+}
+
+# Slack 채널 구성을 위한 AWS Chatbot 설정 (us-east-1 for Route53)
+resource "aws_chatbot_slack_channel_configuration" "route53_alerts" {
+  provider               = aws.us_east_1
+  count                  = var.slack_workspace_id != "" && var.slack_channel_id != "" ? 1 : 0
+  configuration_name     = "${var.environment}-route53-monitoring-slack"
+  iam_role_arn           = aws_iam_role.chatbot_useast1[0].arn
+  slack_channel_id       = var.slack_channel_id
+  slack_team_id          = var.slack_workspace_id
+  sns_topic_arns         = [aws_sns_topic.route53_alerts.arn]
+  logging_level          = "INFO"
+
+  tags = {
+    Name = "${var.environment}-route53-monitoring-slack"
   }
 }
 
@@ -109,6 +163,50 @@ resource "aws_iam_role_policy" "chatbot" {
   count = var.slack_workspace_id != "" && var.slack_channel_id != "" ? 1 : 0
   name  = "${var.environment}-chatbot-policy"
   role  = aws_iam_role.chatbot[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:Describe*",
+          "cloudwatch:Get*",
+          "cloudwatch:List*"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# AWS Chatbot IAM Role (us-east-1)
+resource "aws_iam_role" "chatbot_useast1" {
+  provider = aws.us_east_1
+  count    = var.slack_workspace_id != "" && var.slack_channel_id != "" ? 1 : 0
+  name     = "${var.environment}-chatbot-role-useast1"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "chatbot.amazonaws.com"
+      }
+    }]
+  })
+
+  tags = {
+    Name = "${var.environment}-chatbot-role-useast1"
+  }
+}
+
+resource "aws_iam_role_policy" "chatbot_useast1" {
+  provider = aws.us_east_1
+  count    = var.slack_workspace_id != "" && var.slack_channel_id != "" ? 1 : 0
+  name     = "${var.environment}-chatbot-policy-useast1"
+  role     = aws_iam_role.chatbot_useast1[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -781,6 +879,7 @@ resource "aws_cloudwatch_metric_alarm" "service_count_low" {
 
 # Primary Health Check (AWS) 알람
 resource "aws_cloudwatch_metric_alarm" "route53_primary_health" {
+  provider            = aws.us_east_1
   count               = var.enable_route53_monitoring && var.primary_health_check_id != "" ? 1 : 0
   alarm_name          = "route53-primary-health-check-failed"
   comparison_operator = "LessThanThreshold"
@@ -791,8 +890,8 @@ resource "aws_cloudwatch_metric_alarm" "route53_primary_health" {
   statistic           = "Minimum"
   threshold           = 1
   alarm_description   = "1 분 내 1개의 데이터 포인트에 대한 HealthCheckStatus < 1"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
+  alarm_actions       = [aws_sns_topic.route53_alerts.arn]
+  ok_actions          = [aws_sns_topic.route53_alerts.arn]
   treat_missing_data  = "notBreaching"
 
   dimensions = {
@@ -806,6 +905,7 @@ resource "aws_cloudwatch_metric_alarm" "route53_primary_health" {
 
 # Secondary Health Check (Azure) 알람
 resource "aws_cloudwatch_metric_alarm" "route53_secondary_health" {
+  provider            = aws.us_east_1
   count               = var.enable_route53_monitoring && var.secondary_health_check_id != "" ? 1 : 0
   alarm_name          = "route53-secondary-health-check-failed"
   comparison_operator = "LessThanThreshold"
@@ -816,8 +916,8 @@ resource "aws_cloudwatch_metric_alarm" "route53_secondary_health" {
   statistic           = "Minimum"
   threshold           = 1
   alarm_description   = "1 분 내 1개의 데이터 포인트에 대한 HealthCheckStatus < 1"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
+  alarm_actions       = [aws_sns_topic.route53_alerts.arn]
+  ok_actions          = [aws_sns_topic.route53_alerts.arn]
   treat_missing_data  = "notBreaching"
 
   dimensions = {
@@ -831,6 +931,7 @@ resource "aws_cloudwatch_metric_alarm" "route53_secondary_health" {
 
 # Route53 Health Check Percentage (Primary)
 resource "aws_cloudwatch_metric_alarm" "route53_primary_percentage" {
+  provider            = aws.us_east_1
   count               = var.enable_route53_monitoring && var.primary_health_check_id != "" ? 1 : 0
   alarm_name          = "${var.environment}-route53-primary-percentage-low"
   comparison_operator = "LessThanThreshold"
@@ -841,8 +942,8 @@ resource "aws_cloudwatch_metric_alarm" "route53_primary_percentage" {
   statistic           = "Average"
   threshold           = 50
   alarm_description   = "Primary Health Check 정상 비율이 50% 미만입니다"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
+  alarm_actions       = [aws_sns_topic.route53_alerts.arn]
+  ok_actions          = [aws_sns_topic.route53_alerts.arn]
 
   dimensions = {
     HealthCheckId = var.primary_health_check_id
@@ -855,6 +956,7 @@ resource "aws_cloudwatch_metric_alarm" "route53_primary_percentage" {
 
 # Route53 Health Check Percentage (Secondary)
 resource "aws_cloudwatch_metric_alarm" "route53_secondary_percentage" {
+  provider            = aws.us_east_1
   count               = var.enable_route53_monitoring && var.secondary_health_check_id != "" ? 1 : 0
   alarm_name          = "${var.environment}-route53-secondary-percentage-low"
   comparison_operator = "LessThanThreshold"
@@ -865,8 +967,8 @@ resource "aws_cloudwatch_metric_alarm" "route53_secondary_percentage" {
   statistic           = "Average"
   threshold           = 50
   alarm_description   = "Secondary Health Check 정상 비율이 50% 미만입니다"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
+  alarm_actions       = [aws_sns_topic.route53_alerts.arn]
+  ok_actions          = [aws_sns_topic.route53_alerts.arn]
 
   dimensions = {
     HealthCheckId = var.secondary_health_check_id
@@ -877,16 +979,45 @@ resource "aws_cloudwatch_metric_alarm" "route53_secondary_percentage" {
   }
 }
 
+# AWS ALB Direct Health Check (페일오버 감지용)
+resource "aws_cloudwatch_metric_alarm" "route53_aws_alb_health" {
+  provider            = aws.us_east_1
+  count               = var.enable_route53_monitoring && var.aws_alb_health_check_id != "" ? 1 : 0
+  alarm_name          = "route53-aws-alb-health-check-failed"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "HealthCheckStatus"
+  namespace           = "AWS/Route53"
+  period              = 60
+  statistic           = "Minimum"
+  threshold           = 1
+  alarm_description   = "AWS ALB 직접 헬스체크 실패 - CloudFront 페일오버 감지"
+  alarm_actions       = [aws_sns_topic.route53_alerts.arn]
+  ok_actions          = [aws_sns_topic.route53_alerts.arn]
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    HealthCheckId = var.aws_alb_health_check_id
+  }
+
+  tags = {
+    Name     = "route53-aws-alb-health-check-failed"
+    Purpose  = "AWS-ALB-Direct-Monitoring"
+    Severity = "HIGH"
+  }
+}
+
 # Composite Alarm: 모든 Health Check가 실패했을 때
 resource "aws_cloudwatch_composite_alarm" "all_sites_down" {
+  provider         = aws.us_east_1
   count             = var.enable_route53_monitoring && var.primary_health_check_id != "" && var.secondary_health_check_id != "" ? 1 : 0
   alarm_name        = "${var.environment}-all-sites-down-critical"
   alarm_description = "CRITICAL: Primary와 Secondary 사이트 모두 Health Check 실패"
 
   alarm_rule = "ALARM(${aws_cloudwatch_metric_alarm.route53_primary_health[0].alarm_name}) AND ALARM(${aws_cloudwatch_metric_alarm.route53_secondary_health[0].alarm_name})"
 
-  alarm_actions = [aws_sns_topic.alerts.arn]
-  ok_actions    = [aws_sns_topic.alerts.arn]
+  alarm_actions = [aws_sns_topic.route53_alerts.arn]
+  ok_actions    = [aws_sns_topic.route53_alerts.arn]
 
   tags = {
     Name     = "${var.environment}-all-sites-down-critical"
@@ -974,14 +1105,25 @@ resource "aws_iam_role_policy" "auto_recovery_lambda" {
 }
 
 # Lambda Function for Auto Recovery
+data "archive_file" "lambda_zip" {
+  type        = "zip"
+  output_path = "${path.module}/lambda/auto_recovery_generated.zip"
+
+  source {
+    content  = file("${path.module}/lambda/index.py")
+    filename = "index.py"
+  }
+}
+
 resource "aws_lambda_function" "auto_recovery" {
-  filename         = "${path.module}/lambda/auto_recovery.zip"
+  filename         = data.archive_file.lambda_zip.output_path
   function_name    = "${var.environment}-eks-auto-recovery"
   role             = aws_iam_role.auto_recovery_lambda.arn
   handler          = "index.handler"
   runtime          = "python3.11"
   timeout          = 300
   memory_size      = 256
+  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
 
   environment {
     variables = {
@@ -1670,10 +1812,37 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
         type   = "metric"
         x      = 0
         y      = 57
-        width  = 8
+        width  = 6
         height = 6
         properties = {
-          title  = "Primary (AWS) Health Check Status"
+          title  = "AWS ALB Direct Health Check"
+          region = "us-east-1"
+          view   = "singleValue"
+          stacked = true
+          metrics = var.aws_alb_health_check_id != "" ? [
+            ["AWS/Route53", "HealthCheckStatus", "HealthCheckId", var.aws_alb_health_check_id, { stat = "Minimum", label = "ALB Status (1=Healthy)", color = "#1f77b4" }]
+          ] : []
+          period = 60
+          yAxis = {
+            left = { min = 0, max = 1 }
+          }
+          annotations = {
+            horizontal = [{
+              value = 1
+              label = "Healthy"
+              color = "#2ca02c"
+            }]
+          }
+        }
+      },
+      {
+        type   = "metric"
+        x      = 6
+        y      = 57
+        width  = 6
+        height = 6
+        properties = {
+          title  = "CloudFront (End-to-End) Health Check"
           region = "us-east-1"
           view   = "singleValue"
           stacked = true
@@ -1688,12 +1857,12 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       },
       {
         type   = "metric"
-        x      = 8
+        x      = 12
         y      = 57
-        width  = 8
+        width  = 6
         height = 6
         properties = {
-          title  = "Secondary (Azure) Health Check Status"
+          title  = "Azure Blob Storage Health Check"
           region = "us-east-1"
           metrics = var.secondary_health_check_id != "" ? [
             ["AWS/Route53", "HealthCheckStatus", "HealthCheckId", var.secondary_health_check_id, { stat = "Minimum", label = "Health Status (1=Healthy)", color = "#ff9900" }]
@@ -1707,19 +1876,22 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring" {
       },
       {
         type   = "metric"
-        x      = 16
+        x      = 18
         y      = 57
-        width  = 8
+        width  = 6
         height = 6
         properties = {
-          title  = "Health Check Percentage Healthy"
+          title  = "Health Check Percentage"
           region = "us-east-1"
           metrics = concat(
+            var.aws_alb_health_check_id != "" ? [
+              ["AWS/Route53", "HealthCheckPercentageHealthy", "HealthCheckId", var.aws_alb_health_check_id, { stat = "Average", label = "AWS ALB", color = "#1f77b4" }]
+            ] : [],
             var.primary_health_check_id != "" ? [
-              ["AWS/Route53", "HealthCheckPercentageHealthy", "HealthCheckId", var.primary_health_check_id, { stat = "Average", label = "Primary (AWS)", color = "#2ca02c" }]
+              ["AWS/Route53", "HealthCheckPercentageHealthy", "HealthCheckId", var.primary_health_check_id, { stat = "Average", label = "CloudFront", color = "#2ca02c" }]
             ] : [],
             var.secondary_health_check_id != "" ? [
-              ["AWS/Route53", "HealthCheckPercentageHealthy", "HealthCheckId", var.secondary_health_check_id, { stat = "Average", label = "Secondary (Azure)", color = "#ff9900" }]
+              ["AWS/Route53", "HealthCheckPercentageHealthy", "HealthCheckId", var.secondary_health_check_id, { stat = "Average", label = "Azure Blob", color = "#ff9900" }]
             ] : []
           )
           period = 60

@@ -113,6 +113,11 @@ output "rds_jdbc_url" {
   value       = "jdbc:mysql://${module.rds.db_instance_address}:${module.rds.db_port}/${module.rds.db_name}"
 }
 
+output "rds_availability_zone" {
+  description = "RDS 인스턴스 가용영역"
+  value       = module.rds.db_availability_zone
+}
+
 output "backup_instance_id" {
   description = "백업 인스턴스 ID"
   value       = aws_instance.backup_instance.id
@@ -121,6 +126,11 @@ output "backup_instance_id" {
 output "backup_instance_private_ip" {
   description = "백업 인스턴스 Private IP"
   value       = aws_instance.backup_instance.private_ip
+}
+
+output "backup_instance_availability_zone" {
+  description = "백업 인스턴스 가용영역"
+  value       = aws_instance.backup_instance.availability_zone
 }
 
 output "backup_instance_ssh_command" {
@@ -178,17 +188,20 @@ output "deployment_summary" {
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   엔드포인트: ${module.rds.db_instance_address}:${module.rds.db_port}
   데이터베이스: ${module.rds.db_name}
+  Availability Zone: ${module.rds.db_availability_zone}
   Multi-AZ: ${var.rds_multi_az ? "활성화" : "비활성화"}
   스토리지: ${var.rds_allocated_storage}GB (최대 ${var.rds_max_allocated_storage}GB)
-  
+
   JDBC URL:
     jdbc:mysql://${module.rds.db_instance_address}:${module.rds.db_port}/${module.rds.db_name}
-  
+
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   💾 백업 시스템 (Plan B)
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   인스턴스 ID: ${aws_instance.backup_instance.id}
   Private IP: ${aws_instance.backup_instance.private_ip}
+  Availability Zone: ${aws_instance.backup_instance.availability_zone}
+  ✅ Same AZ as RDS: ${aws_instance.backup_instance.availability_zone == module.rds.db_availability_zone ? "YES" : "NO"}
   
   백업 설정:
     - 주기: 5분마다
