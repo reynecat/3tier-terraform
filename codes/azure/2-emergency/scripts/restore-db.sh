@@ -16,7 +16,7 @@ MYSQL_HOST="mysql-dr-blue.mysql.database.azure.com"
 RESOURCE_GROUP="rg-dr-blue"
 STORAGE_ACCOUNT="bloberry01"
 CONTAINER="mysql-backups"
-DB_NAME="pocketbank"
+DB_NAME="petclinic"
 DB_USER="mysqladmin"
 # ============================================
 
@@ -79,10 +79,15 @@ gunzip -f "$RESTORE_DIR/backup.sql.gz"
 
 echo ""
 echo "[4/4] MySQL 복구..."
-mysql -h "$MYSQL_HOST" \
+# Azure MySQL의 제약으로 stdin/pipe 리다이렉션 불가
+# SQL을 파일에서 읽어 mysql에 전달
+MYSQL_PWD="$DB_PASSWORD" mysql --batch \
+      -h "$MYSQL_HOST" \
       -u "$DB_USER" \
-      -p"$DB_PASSWORD" \
-      < "$RESTORE_DIR/backup.sql"
+      --ssl-mode=REQUIRED \
+      2>/dev/null <<EOF
+$(cat "$RESTORE_DIR/backup.sql")
+EOF
 
 echo ""
 echo "=========================================="
@@ -94,7 +99,7 @@ echo "Database: $DB_NAME"
 echo ""
 echo "다음 단계:"
 echo "  1. MySQL 연결 테스트"
-echo "     mysql -h $MYSQL_HOST -u $DB_USER -p"
+echo "     mysql -h $MYSQL_HOST -u $DB_USER -p --ssl-mode=REQUIRED"
 echo ""
 echo "  2. 3단계 배포"
 echo "     cd ../../3-failover && terraform apply"

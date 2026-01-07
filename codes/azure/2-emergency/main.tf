@@ -80,6 +80,7 @@ module "db" {
   db_password      = var.db_password
   mysql_sku        = var.mysql_sku
   mysql_storage_gb = var.mysql_storage_gb
+  admin_ip         = var.admin_ip
 
   tags = var.tags
 }

@@ -46,3 +46,9 @@ variable "tags" {
   description = "리소스 태그"
   type        = map(string)
 }
+
+variable "admin_ip" {
+  description = "관리자 IP 주소 (MySQL 접근 허용)"
+  type        = string
+  default     = ""
+}

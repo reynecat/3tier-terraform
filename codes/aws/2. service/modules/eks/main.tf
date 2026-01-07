@@ -15,7 +15,6 @@ resource "null_resource" "cleanup_k8s_resources" {
   triggers = {
     cluster_name = "${var.environment}-eks"
     vpc_id       = var.vpc_id
-    region       = var.region
   }
 
   provisioner "local-exec" {
@@ -27,12 +26,18 @@ resource "null_resource" "cleanup_k8s_resources" {
       echo "=== Starting cleanup of Kubernetes-created AWS resources ==="
 
       VPC_ID="${self.triggers.vpc_id}"
-      REGION="${self.triggers.region}"
+
+      # AWS CLI 기본 region 사용 (AWS_DEFAULT_REGION 환경 변수 또는 ~/.aws/config)
+      # 기본값으로 ap-northeast-2 사용
+      AWS_REGION=$${AWS_DEFAULT_REGION:-ap-northeast-2}
+
+      echo "VPC ID: $VPC_ID"
+      echo "Region: $AWS_REGION"
 
       # 1. VPC 내 모든 Load Balancer 조회 및 삭제
       echo "Step 1: Deleting Load Balancers in VPC $VPC_ID..."
       LB_ARNS=$(aws elbv2 describe-load-balancers \
-        --region "$REGION" \
+        --region "$AWS_REGION" \
         --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" \
         --output text 2>/dev/null || echo "")
 
@@ -40,7 +45,7 @@ resource "null_resource" "cleanup_k8s_resources" {
         for lb_arn in $LB_ARNS; do
           echo "  - Deleting Load Balancer: $lb_arn"
           aws elbv2 delete-load-balancer \
-            --region "$REGION" \
+            --region "$AWS_REGION" \
             --load-balancer-arn "$lb_arn" 2>/dev/null || true
         done
 
@@ -54,7 +59,7 @@ resource "null_resource" "cleanup_k8s_resources" {
       # 2. VPC 내 모든 Target Group 삭제
       echo "Step 2: Deleting Target Groups in VPC $VPC_ID..."
       TG_ARNS=$(aws elbv2 describe-target-groups \
-        --region "$REGION" \
+        --region "$AWS_REGION" \
         --query "TargetGroups[?VpcId=='$VPC_ID'].TargetGroupArn" \
         --output text 2>/dev/null || echo "")
 
@@ -62,7 +67,7 @@ resource "null_resource" "cleanup_k8s_resources" {
         for tg_arn in $TG_ARNS; do
           echo "  - Deleting Target Group: $tg_arn"
           aws elbv2 delete-target-group \
-            --region "$REGION" \
+            --region "$AWS_REGION" \
             --target-group-arn "$tg_arn" 2>/dev/null || true
         done
       else
@@ -71,26 +76,92 @@ resource "null_resource" "cleanup_k8s_resources" {
 
       # 3. VPC 내 모든 ENI (Elastic Network Interface) 정리
       echo "Step 3: Cleaning up Network Interfaces in VPC $VPC_ID..."
-      ENI_IDS=$(aws ec2 describe-network-interfaces \
-        --region "$REGION" \
+
+      # 3-1. ELB 관련 ENI 찾기 (Description에 ELB 포함)
+      ELB_ENI_IDS=$(aws ec2 describe-network-interfaces \
+        --region "$AWS_REGION" \
         --filters "Name=vpc-id,Values=$VPC_ID" \
-        --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" \
+        --query "NetworkInterfaces[?contains(Description, 'ELB')].NetworkInterfaceId" \
         --output text 2>/dev/null || echo "")
 
-      if [ -n "$ENI_IDS" ]; then
-        for eni_id in $ENI_IDS; do
-          echo "  - Deleting ENI: $eni_id"
+      if [ -n "$ELB_ENI_IDS" ]; then
+        for eni_id in $ELB_ENI_IDS; do
+          echo "  - Detaching and deleting ELB ENI: $eni_id"
+
+          # Attachment가 있으면 먼저 detach
+          ATTACHMENT_ID=$(aws ec2 describe-network-interfaces \
+            --region "$AWS_REGION" \
+            --network-interface-ids "$eni_id" \
+            --query 'NetworkInterfaces[0].Attachment.AttachmentId' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$ATTACHMENT_ID" ] && [ "$ATTACHMENT_ID" != "None" ]; then
+            echo "    - Detaching attachment: $ATTACHMENT_ID"
+            aws ec2 detach-network-interface \
+              --region "$AWS_REGION" \
+              --attachment-id "$ATTACHMENT_ID" \
+              --force 2>/dev/null || true
+            sleep 5
+          fi
+
+          # ENI 삭제
           aws ec2 delete-network-interface \
-            --region "$REGION" \
+            --region "$AWS_REGION" \
+            --network-interface-id "$eni_id" 2>/dev/null || true
+        done
+
+        echo "  - Waiting for ELB ENIs to be deleted (15s)..."
+        sleep 15
+      else
+        echo "  - No ELB ENIs found"
+      fi
+
+      # 3-2. Available 상태 ENI 삭제
+      AVAILABLE_ENI_IDS=$(aws ec2 describe-network-interfaces \
+        --region "$AWS_REGION" \
+        --filters "Name=vpc-id,Values=$VPC_ID" "Name=status,Values=available" \
+        --query "NetworkInterfaces[].NetworkInterfaceId" \
+        --output text 2>/dev/null || echo "")
+
+      if [ -n "$AVAILABLE_ENI_IDS" ]; then
+        for eni_id in $AVAILABLE_ENI_IDS; do
+          echo "  - Deleting available ENI: $eni_id"
+          aws ec2 delete-network-interface \
+            --region "$AWS_REGION" \
             --network-interface-id "$eni_id" 2>/dev/null || true
         done
       else
         echo "  - No available ENIs found"
       fi
 
-      # 4. Security Group 정리 대기
-      echo "Step 4: Waiting for dependent resources to be fully deleted (20s)..."
-      sleep 20
+      # 4. Lambda ENI 및 기타 ENI 정리 (재시도)
+      echo "Step 4: Final ENI cleanup (retry for any remaining ENIs)..."
+
+      for i in {1..3}; do
+        REMAINING_ENIS=$(aws ec2 describe-network-interfaces \
+          --region "$AWS_REGION" \
+          --filters "Name=vpc-id,Values=$VPC_ID" \
+          --query "NetworkInterfaces[?Status=='available' || contains(Description, 'ELB') || contains(Description, 'Lambda')].NetworkInterfaceId" \
+          --output text 2>/dev/null || echo "")
+
+        if [ -n "$REMAINING_ENIS" ]; then
+          echo "  - Retry $i: Found remaining ENIs"
+          for eni_id in $REMAINING_ENIS; do
+            echo "    - Deleting ENI: $eni_id"
+            aws ec2 delete-network-interface \
+              --region "$AWS_REGION" \
+              --network-interface-id "$eni_id" 2>/dev/null || true
+          done
+          sleep 10
+        else
+          echo "  - No remaining ENIs found"
+          break
+        fi
+      done
+
+      # 5. 최종 대기
+      echo "Step 5: Final wait for all dependencies to be resolved (30s)..."
+      sleep 30
 
       echo "=== Cleanup completed ==="
     BASH

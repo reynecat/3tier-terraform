@@ -30,3 +30,30 @@ resource "azurerm_mysql_flexible_database" "main" {
   charset             = "utf8mb4"
   collation           = "utf8mb4_unicode_ci"
 }
+
+# MySQL 서버 설정 - SSL 요구사항 비활성화
+resource "azurerm_mysql_flexible_server_configuration" "require_secure_transport" {
+  name                = "require_secure_transport"
+  resource_group_name = var.resource_group_name
+  server_name         = azurerm_mysql_flexible_server.main.name
+  value               = "OFF"
+}
+
+# MySQL 방화벽 규칙 - AKS Outbound IP 대역 허용
+resource "azurerm_mysql_flexible_server_firewall_rule" "aks_subnet" {
+  name                = "AllowAKSSubnet"
+  resource_group_name = var.resource_group_name
+  server_name         = azurerm_mysql_flexible_server.main.name
+  start_ip_address    = "4.230.0.0"
+  end_ip_address      = "4.230.255.255"
+}
+
+# MySQL 방화벽 규칙 - 현재 관리자 IP 허용 (선택사항)
+resource "azurerm_mysql_flexible_server_firewall_rule" "admin_ip" {
+  count               = var.admin_ip != "" ? 1 : 0
+  name                = "AllowAdminIP"
+  resource_group_name = var.resource_group_name
+  server_name         = azurerm_mysql_flexible_server.main.name
+  start_ip_address    = var.admin_ip
+  end_ip_address      = var.admin_ip
+}

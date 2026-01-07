@@ -355,7 +355,32 @@ HTML
 }
 
 # =================================================
-# Route53 - Subdomain CNAME to Blob Container
+# Module: Azure Front Door (Multi-Cloud DR)
+# =================================================
+
+module "frontdoor" {
+  source = "./modules/frontdoor"
+
+  environment         = var.environment
+  resource_group_name = azurerm_resource_group.main.name
+
+  # AWS Primary Origin
+  aws_alb_fqdn = var.aws_alb_fqdn
+
+  # Azure Secondary Origins
+  azure_blob_fqdn = "${var.storage_account_name}.z12.web.core.windows.net"
+  azure_appgw_ip  = var.azure_appgw_ip # 2-emergency에서 생성 후 입력
+
+  # Custom Domain
+  custom_domain = var.custom_domain
+
+  tags = var.tags
+
+  depends_on = [azurerm_storage_account.backups]
+}
+
+# =================================================
+# Route53 - CNAME to Front Door (Optional)
 # =================================================
 
 # Data Source - Route53 Hosted Zone
@@ -366,15 +391,15 @@ data "aws_route53_zone" "main" {
   private_zone = false
 }
 
-# CNAME Record - 서브도메인을 Blob Static Website로 직접 연결
-resource "aws_route53_record" "azure_maintenance" {
+# CNAME Record - 도메인을 Front Door로 연결
+resource "aws_route53_record" "frontdoor" {
   count = var.enable_route53 ? 1 : 0
 
-  zone_id = data.aws_route53_zone.main[0].zone_id
-  name    = var.subdomain_name
-  type    = "CNAME"
-  ttl     = 300
+  zone_id         = data.aws_route53_zone.main[0].zone_id
+  name            = var.domain_name
+  type            = "CNAME"
+  ttl             = 300
   allow_overwrite = true
 
-  records = ["${var.storage_account_name}.z12.web.core.windows.net"]
+  records = [module.frontdoor.frontdoor_endpoint_hostname]
 }

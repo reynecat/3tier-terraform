@@ -57,7 +57,6 @@ module "eks" {
 
   environment         = var.environment
   vpc_id              = module.vpc.vpc_id
-  region              = var.aws_region
   web_subnet_ids      = module.vpc.web_subnet_ids
   was_subnet_ids      = module.vpc.was_subnet_ids
   node_instance_type  = var.eks_node_instance_type

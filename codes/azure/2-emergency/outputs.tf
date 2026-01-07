@@ -40,7 +40,7 @@ output "aks_kubeconfig_command" {
 
 # Application Gateway Outputs
 output "appgw_public_ip" {
-  description = "Application Gateway Public IP (CloudFront Origin으로 사용)"
+  description = "Application Gateway Public IP (1-always Front Door Origin으로 사용)"
   value       = module.appgw.appgw_public_ip
 }
 
@@ -87,6 +87,10 @@ output "deployment_summary" {
     - Backend: ${join(", ", var.backend_ip_addresses)}
     - Backend Port: ${var.backend_port}
 
+  ⚠️  IMPORTANT: 1-always Front Door Origin 업데이트 필요
+    Application Gateway IP를 1-always Front Door에 추가:
+    ${module.appgw.appgw_public_ip}
+
   다음 단계:
     1. MySQL 백업 복구
        cd scripts
@@ -96,21 +100,31 @@ output "deployment_summary" {
        az aks get-credentials --resource-group ${var.resource_group_name} --name ${module.aks.aks_cluster_name}
 
     3. Kubernetes 리소스 배포
-       kubectl apply -f k8s-manifests/namespaces.yaml
-       kubectl apply -f k8s-manifests/was/
-       kubectl apply -f k8s-manifests/web/
+       cd scripts
+       ./deploy-petclinic.sh
 
-    4. LoadBalancer Service IP 확인 후 AppGW Backend 업데이트
-       kubectl get svc -n pocketbank -w
-       # LoadBalancer External IP를 확인한 후
-       # terraform.tfvars에서 backend_ip_addresses 업데이트
-       # terraform apply 재실행
+    4. 1-always Front Door에서 Azure Origin 활성화
+       # 1-always terraform.tfvars에 추가:
+       azure_appgw_ip = "${module.appgw.appgw_public_ip}"
 
-    5. CloudFront Origin 업데이트
-       Application Gateway Public IP: ${module.appgw.appgw_public_ip}
+       # 1-always 디렉토리에서 terraform apply
+       cd ../1-always
+       terraform apply
+
+       # Front Door Origin 활성화
+       az afd origin update \
+         -g ${var.resource_group_name} \
+         --profile-name afd-multicloud-${var.environment} \
+         --origin-group-name failover-group \
+         --origin-name azure-aks-appgw \
+         --enabled-state Enabled
 
   트래픽 흐름:
-    User → CloudFront → Application Gateway → AKS LoadBalancer → Pods
+    User → Front Door (1-always) → AWS ALB (Primary) / Azure AKS (Failover)
+
+  Failover 시나리오:
+    1. AWS 장애 (자동): Front Door → Azure Blob (정적 페이지)
+    2. 2-emergency 배포 후 (수동): Front Door → Azure AKS (완전 복구)
 
   예상 배포 시간: 15-20분
 

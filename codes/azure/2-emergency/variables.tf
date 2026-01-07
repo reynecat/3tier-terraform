@@ -40,7 +40,7 @@ variable "storage_account_name" {
 variable "db_name" {
   description = "데이터베이스 이름"
   type        = string
-  default     = "pocketbank"
+  default     = "petclinic"
 }
 
 variable "db_username" {
@@ -147,4 +147,10 @@ variable "tags" {
     Phase       = "Full-Failover"
     ManagedBy   = "Terraform"
   }
+}
+
+variable "admin_ip" {
+  description = "관리자 IP 주소 (MySQL 접근 허용, 비어있으면 규칙 생성 안함)"
+  type        = string
+  default     = ""
 }

@@ -10,12 +10,6 @@ variable "vpc_id" {
   type        = string
 }
 
-variable "region" {
-  description = "AWS 리전 (destroy 시 K8s 생성 리소스 정리에 사용)"
-  type        = string
-  default     = "ap-northeast-2"
-}
-
 variable "kubernetes_version" {
   description = "Kubernetes 버전"
   type        = string

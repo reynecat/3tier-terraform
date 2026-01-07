@@ -164,6 +164,7 @@ mysqldump \
     -u $DB_USERNAME \
     -p"$RDS_PASSWORD" \
     --single-transaction \
+    --set-gtid-purged=OFF \
     --routines \
     --triggers \
     --events \

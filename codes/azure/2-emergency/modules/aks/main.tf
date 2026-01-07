@@ -68,15 +68,5 @@ resource "azurerm_kubernetes_cluster_node_pool" "was" {
   tags = var.tags
 }
 
-# Role Assignments (AKS → VNet)
-resource "azurerm_role_assignment" "aks_network" {
-  scope                = var.vnet_id
-  role_definition_name = "Network Contributor"
-  principal_id         = azurerm_kubernetes_cluster.main.identity[0].principal_id
-}
-
-resource "azurerm_role_assignment" "aks_rg_contributor" {
-  scope                = var.resource_group_id
-  role_definition_name = "Contributor"
-  principal_id         = azurerm_kubernetes_cluster.main.identity[0].principal_id
-}
+# Role Assignments are automatically created by AKS with SystemAssigned identity
+# Removed to avoid conflicts with Azure-managed role assignments

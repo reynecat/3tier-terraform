@@ -112,6 +112,25 @@ variable "subdomain_name" {
   default     = ""
 }
 
+# Front Door 관련 변수
+variable "aws_alb_fqdn" {
+  description = "AWS ALB FQDN (Primary Origin)"
+  type        = string
+  default     = ""
+}
+
+variable "azure_appgw_ip" {
+  description = "Azure Application Gateway Public IP (2-emergency에서 생성 후 입력)"
+  type        = string
+  default     = ""
+}
+
+variable "custom_domain" {
+  description = "Front Door Custom Domain (선택사항)"
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "리소스 태그"
   type        = map(string)

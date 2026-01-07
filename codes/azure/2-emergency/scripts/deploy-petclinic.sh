@@ -47,7 +47,7 @@ EOF
 echo ""
 echo "[3/7] MySQL Secret 생성 (was namespace)..."
 # Terraform tfvars에서 설정한 비밀번호 사용
-DB_PASSWORD="SecureP@ssw0rd123!"
+DB_PASSWORD="byemyeblue1!"
 
 kubectl create secret generic db-credentials \
   --from-literal=url="jdbc:mysql://${MYSQL_FQDN}:3306/petclinic?useSSL=true&requireSSL=false&serverTimezone=UTC" \
@@ -315,10 +315,10 @@ echo "Petclinic 3-Tier 배포 완료!"
 echo "=========================================="
 echo ""
 echo "다음 단계:"
-echo "  1. Application Gateway Backend Pool 설정:"
-echo "     - Backend: web-service.web.svc.cluster.local"
-echo "     - Port: 80"
+echo "  Application Gateway Ingress를 설정하려면:"
+echo "     cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency/scripts"
+echo "     ./setup-ingress.sh"
 echo ""
-echo "  2. 또는 web-service를 LoadBalancer로 변경:"
+echo "  또는 빠른 테스트를 위해 LoadBalancer로 변경:"
 echo "     kubectl patch svc web-service -n web -p '{\"spec\":{\"type\":\"LoadBalancer\"}}'"
 echo ""

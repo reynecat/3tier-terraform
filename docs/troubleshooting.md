@@ -1391,47 +1391,153 @@ mysql -h $RDS_HOST -u admin -pbyemyblue -e "SELECT 1;"
 
 #### 증상
 ```bash
-mysqldump: Got error: 1045: Access denied for user 'admin'@'%' (using password: YES) 
+mysqldump: Got error: 1045: Access denied for user 'admin'@'%' (using password: YES)
 when executing 'FLUSH TABLES WITH READ LOCK'
+```
+
+또는
+
+```bash
+mysqldump: Couldn't execute 'FLUSH TABLES WITH READ LOCK':
+Access denied for user 'admin'@'%' (using password: YES) (1045)
 ```
 
 #### 원인
 - RDS admin 계정은 SUPER 권한이 없음
-- FLUSH TABLES 명령 실행 불가
+- `--single-transaction` 옵션이 내부적으로 FLUSH TABLES WITH READ LOCK을 시도함
+- RDS MySQL 8.0+에서는 GTID 관련 추가 권한 필요
 
 #### 해결방법
 
-**mysqldump 옵션 수정**
+**방법 1: mysqldump 옵션 수정 (권장)**
+
+`--set-gtid-purged=OFF` 옵션을 추가하면 GTID 관련 권한 문제 해결:
+
 ```bash
-# --skip-lock-tables와 --set-gtid-purged=OFF 추가
+# 올바른 옵션 조합
 mysqldump -h $RDS_HOST \
   -u admin -pbyemyblue \
   --databases pocketbank \
-  --skip-lock-tables \
-  --set-gtid-purged=OFF \
   --single-transaction \
-  --quick \
+  --set-gtid-purged=OFF \
   --routines \
   --triggers \
   --events \
   | gzip > /tmp/backup.sql.gz
 ```
 
-**백업 스크립트 업데이트**
+**주요 옵션 설명:**
+- `--single-transaction`: InnoDB 테이블에 대해 일관된 백업 (테이블 락 없이)
+- `--set-gtid-purged=OFF`: GTID 정보를 백업에 포함하지 않음 (RDS SUPER 권한 불필요)
+- `--skip-lock-tables`: 명시적 테이블 락 비활성화 (선택사항, --single-transaction과 함께 사용 시)
+
+**방법 2: 백업 스크립트 영구 수정**
+
+Terraform 코드를 수정하여 향후 백업 인스턴스 생성 시 자동 적용:
+
 ```bash
-# /usr/local/bin/mysql-backup-to-azure.sh
+# codes/aws/2. service/scripts/backup-init.sh 수정
+# Line 162-172 부분
 
-# 수정 전
-mysqldump -h "$RDS_HOST" -u "$DB_USERNAME" -p"$DB_PASSWORD" \
-  --databases pocketbank | gzip > "$BACKUP_FILE"
+mysqldump \
+    -h $RDS_HOST \
+    -u $DB_USERNAME \
+    -p"$RDS_PASSWORD" \
+    --single-transaction \
+    --set-gtid-purged=OFF \    # 이 줄 추가
+    --routines \
+    --triggers \
+    --events \
+    --databases $DB_NAME \
+    > $BACKUP_FILE
+```
 
-# 수정 후
-mysqldump -h "$RDS_HOST" -u "$DB_USERNAME" -p"$DB_PASSWORD" \
-  --databases pocketbank \
-  --skip-lock-tables \
-  --set-gtid-purged=OFF \
-  --single-transaction \
-  | gzip > "$BACKUP_FILE"
+**방법 3: 기존 백업 인스턴스 스크립트 수정**
+
+이미 실행 중인 백업 인스턴스에서 직접 수정:
+
+```bash
+# SSM으로 백업 인스턴스 접속
+aws ssm start-session --target i-0066dc51da5528f0f
+
+# 백업 스크립트 편집
+sudo vi /usr/local/bin/mysql-backup-to-azure.sh
+
+# mysqldump 부분 찾아서 수정:
+# --single-transaction 다음 줄에 추가
+# --set-gtid-purged=OFF \
+
+# 또는 sed로 자동 수정:
+sudo sed -i 's/--single-transaction/--single-transaction --set-gtid-purged=OFF/g' \
+  /usr/local/bin/mysql-backup-to-azure.sh
+
+# 수정 확인
+grep -A 5 "mysqldump" /usr/local/bin/mysql-backup-to-azure.sh
+
+# 백업 테스트 실행
+sudo /usr/local/bin/mysql-backup-to-azure.sh
+
+# 로그 확인
+sudo tail -f /var/log/mysql-backup-to-azure.log
+```
+
+**참고: 다른 옵션들과의 차이**
+
+```bash
+# ❌ 잘못된 조합 (권한 에러 발생)
+mysqldump --single-transaction
+
+# ❌ 데이터 정합성 문제 가능
+mysqldump --skip-lock-tables
+
+# ✅ 권장 (RDS에서 안전하고 일관된 백업)
+mysqldump --single-transaction --set-gtid-purged=OFF
+```
+
+#### 추가 트러블슈팅
+
+**1. 여전히 권한 에러 발생 시**
+
+RDS 사용자 권한 확인:
+
+```bash
+# 백업 인스턴스에서 실행
+mysql -h $RDS_HOST -u admin -pbyemyblue -e "SHOW GRANTS FOR 'admin'@'%';"
+```
+
+필요한 권한:
+- SELECT
+- RELOAD (FLUSH TABLES용)
+- LOCK TABLES
+- SHOW VIEW
+- EVENT
+- TRIGGER
+
+**2. 백업 성공 확인**
+
+```bash
+# 백업 파일 크기 확인
+ls -lh /opt/mysql-backup/
+
+# Azure Blob Storage 업로드 확인
+az storage blob list \
+  --account-name bloberry01 \
+  --container-name mysql-backups \
+  --prefix "backups/" \
+  --output table
+```
+
+**3. Cron 로그 모니터링**
+
+```bash
+# Cron 작업 확인
+sudo crontab -l
+
+# 백업 로그 실시간 모니터링
+sudo tail -f /var/log/mysql-backup-to-azure.log
+
+# 최근 백업 결과만 확인
+sudo tail -50 /var/log/mysql-backup-to-azure.log | grep -A 10 "백업 시작"
 ```
 
 ---
