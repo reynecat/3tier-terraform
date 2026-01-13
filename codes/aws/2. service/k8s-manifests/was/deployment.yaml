@@ -28,7 +28,7 @@ spec:
     spec:
       containers:
       - name: spring-boot
-        image: springio/petclinic
+        image: cloud039/petclinic-was:v3
         imagePullPolicy: Always
         ports:
         - containerPort: 8080

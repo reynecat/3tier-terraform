@@ -8,14 +8,21 @@
 
 ### Terraform Destroy 에러
 - **[EMERGENCY_FIX.md](./EMERGENCY_FIX.md)** - Security Group 의존성 에러 즉시 해결
-- **[manual-cleanup.sh](./manual-cleanup.sh)** - 자동 정리 스크립트
+- **[DESTROY_GUIDE.md](./DESTROY_GUIDE.md)** - Terraform destroy 사용 가이드
 
 ### DR 장애 대응
 - **[dr-failover-procedure.md](./dr-failover-procedure.md)** - AWS → Azure DR 전환 절차
+- **[DR_TEST_GUIDE.md](./DR_TEST_GUIDE.md)** - DR 테스트 가이드
+- **[FAILOVER_CONFIGURATION.md](./FAILOVER_CONFIGURATION.md)** - Failover 설정
 
 ---
 
-## 📖 운영 가이드
+## 📖 배포 및 운영 가이드
+
+### 배포 가이드
+| 문서 | 설명 |
+|------|------|
+| [deployment-guide.md](./deployment-guide.md) | AWS 2. Service 배포 전체 가이드 |
 
 ### Terraform 운영
 | 문서 | 설명 |
@@ -30,17 +37,13 @@
 | [BACKUP_INSTANCE_AZ_ALIGNMENT.md](./BACKUP_INSTANCE_AZ_ALIGNMENT.md) | 백업 인스턴스 AZ 정렬 가이드 |
 | [route53-health-check-guide.md](./route53-health-check-guide.md) | Route53 헬스체크 설정 가이드 |
 
-### Azure 관련
-| 문서 | 설명 |
-|------|------|
-| [azure_site.txt](./azure_site.txt) | Azure 사이트 정보 |
-
 ---
 
 ## 🔧 트러블슈팅
 
-### 일반 문제 해결
-- **[troubleshooting.md](./troubleshooting.md)** - 종합 트러블슈팅 가이드
+### 종합 트러블슈팅 가이드
+- **[troubleshooting-complete.md](./troubleshooting-complete.md)** - 모든 문제와 해결 과정 완전 정리
+- **[troubleshooting.md](./troubleshooting.md)** - 기존 트러블슈팅 가이드 (참고용)
 
 ### Security Group 의존성 에러
 ```
@@ -110,11 +113,11 @@ sleep 180
 terraform destroy
 ```
 
-#### 긴급 정리 스크립트
+#### 긴급 정리 (Destroy 에러 시)
 ```bash
-cd /home/ubuntu/3tier-terraform
-VPC_ID=$(cd codes/aws/2.\ service && terraform output -raw vpc_id)
-./docs/manual-cleanup.sh "$VPC_ID"
+cd /home/ubuntu/3tier-terraform/codes/aws/2.\ service
+terraform destroy
+# cleanup provisioner가 자동으로 정리해줍니다
 ```
 
 #### DR 전환 (CloudFront → Azure)
@@ -130,22 +133,51 @@ aws cloudfront update-distribution --id <DISTRIBUTION_ID> --if-match <ETAG> \
 
 | 날짜 | 문서 | 변경 내용 |
 |------|------|-----------|
+| 2026-01-07 | troubleshooting-complete.md | 모든 문제와 해결 과정 완전 정리 |
 | 2026-01-04 | EMERGENCY_FIX.md | Security Group 에러 해결 가이드 생성 |
-| 2026-01-04 | manual-cleanup.sh | 자동 정리 스크립트 추가 |
 | 2026-01-04 | FIX_SUMMARY_FINAL.md | 최종 수정 요약 문서 생성 |
+| 2026-01-04 | DESTROY_GUIDE.md | Terraform destroy 가이드 업데이트 |
 | 2026-01-03 | BACKUP_INSTANCE_AZ_ALIGNMENT.md | AZ 정렬 가이드 |
 | 2026-01-02 | route53-health-check-guide.md | Route53 설정 가이드 |
 | 2025-12-29 | dr-failover-procedure.md | DR 전환 절차 문서화 |
 
 ---
 
-## 🆘 추가 도움이 필요한 경우
+## 📁 문서 구조
 
-1. **문서 내 검색**: `grep -r "키워드" docs/`
-2. **코드 참조**: 각 문서에 코드 파일 링크 포함
-3. **트러블슈팅**: [troubleshooting.md](./troubleshooting.md) 먼저 확인
+```
+docs/
+├── README.md                                   # 이 파일
+├── troubleshooting-complete.md                 # 종합 트러블슈팅 (신규, 권장)
+├── troubleshooting.md                          # 기존 트러블슈팅 (참고용)
+│
+├── 긴급 대응/
+│   ├── EMERGENCY_FIX.md                       # Security Group 에러 긴급 해결
+│   ├── DESTROY_GUIDE.md                       # Terraform destroy 가이드
+│   ├── dr-failover-procedure.md               # DR 전환 절차
+│   ├── DR_TEST_GUIDE.md                       # DR 테스트
+│   └── FAILOVER_CONFIGURATION.md              # Failover 설정
+│
+├── 배포 및 운영/
+│   ├── deployment-guide.md                    # 배포 가이드
+│   ├── FIX_SUMMARY_FINAL.md                   # Destroy 수정 요약
+│   └── TERRAFORM_DESTROY_FIX.md               # Destroy 에러 분석
+│
+└── 설정 가이드/
+    ├── BACKUP_INSTANCE_AZ_ALIGNMENT.md        # 백업 인스턴스 AZ 정렬
+    ├── route53-health-check-guide.md          # Route53 헬스체크
+    └── SG_DEPENDENCY_FINAL_FIX.md             # SG 의존성 문제
+```
 
 ---
 
-**마지막 업데이트**: 2026-01-04
+## 🆘 추가 도움이 필요한 경우
+
+1. **종합 트러블슈팅 먼저 확인**: [troubleshooting-complete.md](./troubleshooting-complete.md)
+2. **문서 내 검색**: `grep -r "키워드" docs/`
+3. **코드 참조**: 각 문서에 코드 파일 링크 포함
+
+---
+
+**마지막 업데이트**: 2026-01-07
 **관리자**: DevOps Team

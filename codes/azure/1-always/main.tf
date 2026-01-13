@@ -332,7 +332,7 @@ resource "azurerm_storage_blob" "maintenance_page" {
             </div>
             <div class="info-item">
                 <span class="info-label">모드</span>
-                <span class="info-value">Pilot Light</span>
+                <span class="info-value">Backup & Restore</span>
             </div>
             <div class="info-item">
                 <span class="info-label">상태</span>
