@@ -24,6 +24,17 @@ AWS/Azure 멀티클라우드 Backup & Restore DR 솔루션 관련 모든 문서�
 ### 세부 설정
 - **[route53-health-check-guide.md](./route53-health-check-guide.md)** - Route53 헬스체크 및 CloudFront Failover 설정
 
+### 인프라 상세 설명
+- **[infra-details-aws-route53.md](./infra-details-aws-route53.md)** - AWS Route53 및 CloudFront 상세 설명
+- **[infra-details-aws-service.md](./infra-details-aws-service.md)** - AWS VPC, EKS, RDS 상세 설명
+- **[infra-details-aws-monitoring.md](./infra-details-aws-monitoring.md)** - AWS 모니터링 및 병목 감지
+- **[infra-details-aws-cicd.md](./infra-details-aws-cicd.md)** - CI/CD 파이프라인 상세 설명
+- **[infra-details-azure-always.md](./infra-details-azure-always.md)** - Azure 상시 대기 인프라
+- **[infra-details-azure-emergency.md](./infra-details-azure-emergency.md)** - Azure 재해 복구 인프라
+
+### 보안
+- **[security-architecture.md](./security-architecture.md)** - 보안 아키텍처 (WAF, OIDC, Encryption)
+
 ---
 
 ## 📋 문서 카테고리
@@ -43,6 +54,17 @@ AWS/Azure 멀티클라우드 Backup & Restore DR 솔루션 관련 모든 문서�
 ### 🔧 설정 및 트러블슈팅
 1. [troubleshooting.md](./troubleshooting.md) - 종합 트러블슈팅
 2. [route53-health-check-guide.md](./route53-health-check-guide.md) - Route53/CloudFront 설정
+
+### 📖 인프라 상세 설명 (디렉토리별)
+1. [infra-details-aws-route53.md](./infra-details-aws-route53.md) - AWS Route53 및 CloudFront
+2. [infra-details-aws-service.md](./infra-details-aws-service.md) - AWS VPC, EKS, RDS
+3. [infra-details-aws-monitoring.md](./infra-details-aws-monitoring.md) - AWS 모니터링 및 병목 감지
+4. [infra-details-aws-cicd.md](./infra-details-aws-cicd.md) - CI/CD 파이프라인
+5. [infra-details-azure-always.md](./infra-details-azure-always.md) - Azure 상시 대기 인프라
+6. [infra-details-azure-emergency.md](./infra-details-azure-emergency.md) - Azure 재해 복구 인프라
+
+### 🔒 보안
+1. [security-architecture.md](./security-architecture.md) - 보안 아키텍처 (WAF, OIDC, Encryption)
 
 ---
 
@@ -131,9 +153,20 @@ docs/
 │   ├── DR_TEST_GUIDE.md             # DR 테스트 가이드
 │   └── FAILOVER_CONFIGURATION.md    # Failover 설정
 │
-└── 설정 및 트러블슈팅/
-    ├── troubleshooting.md           # 종합 트러블슈팅 가이드
-    └── route53-health-check-guide.md # CloudFront Failover 설정
+├── 설정 및 트러블슈팅/
+│   ├── troubleshooting.md           # 종합 트러블슈팅 가이드
+│   └── route53-health-check-guide.md # CloudFront Failover 설정
+│
+├── 인프라 상세 설명/
+│   ├── infra-details-aws-route53.md    # AWS Route53 및 CloudFront
+│   ├── infra-details-aws-service.md    # AWS VPC, EKS, RDS
+│   ├── infra-details-aws-monitoring.md # AWS 모니터링 및 병목 감지
+│   ├── infra-details-aws-cicd.md       # CI/CD 파이프라인
+│   ├── infra-details-azure-always.md   # Azure 상시 대기 인프라
+│   └── infra-details-azure-emergency.md # Azure 재해 복구 인프라
+│
+└── 보안/
+    └── security-architecture.md     # 보안 아키텍처 (WAF, OIDC, Encryption)
 ```
 
 ---

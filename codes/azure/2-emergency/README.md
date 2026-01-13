@@ -1,6 +1,6 @@
-# PlanB Azure 3-failover
+# PlanB Azure 2-emergency
 
-재해 시 배포: MySQL + AKS 클러스터 + PocketBank
+재해 시 배포: MySQL + AKS 클러스터 + PetClinic
 
 ## 포함 리소스
 
@@ -186,7 +186,7 @@ mysql -h mysql-dr-prod.mysql.database.azure.com \
 
 # 데이터베이스 확인
 SHOW DATABASES;
-USE pocketbank;
+USE petclinic;
 SHOW TABLES;
 ```
 
@@ -231,7 +231,7 @@ curl https://example.com
 │ └─────────────────────────────────────┘ │
 │               ↓                         │
 │ ┌─────────────────────────────────────┐ │
-│ │ WAS Tier (Spring PocketBank)         │ │
+│ │ WAS Tier (Spring PetClinic)          │ │
 │ │ - Replicas: 2                       │ │
 │ │ - Service: ClusterIP                │ │
 │ └─────────────────────────────────────┘ │
@@ -241,7 +241,7 @@ curl https://example.com
 │ MySQL Flexible Server                   │
 │                                         │
 │ - FQDN: mysql-dr-prod.mysql...          │
-│ - Database: pocketbank                   │
+│ - Database: petclinic                    │
 └─────────────────────────────────────────┘
 ```
 
