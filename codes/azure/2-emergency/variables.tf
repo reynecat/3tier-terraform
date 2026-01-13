@@ -44,10 +44,15 @@ variable "db_name" {
 }
 
 variable "db_username" {
-  description = "MySQL 관리자 사용자명"
+  description = "MySQL 관리자 사용자명 (Azure MySQL Flexible Server는 'mysqladmin' 사용)"
   type        = string
   default     = "mysqladmin"
   sensitive   = true
+
+  validation {
+    condition     = var.db_username == "mysqladmin"
+    error_message = "Azure MySQL Flexible Server는 관리자 사용자명으로 'mysqladmin'을 사용해야 합니다. K8s Secret 생성 시 동일한 사용자명을 사용하세요."
+  }
 }
 
 variable "db_password" {
@@ -121,9 +126,10 @@ variable "was_node_max_count" {
 
 # Application Gateway 설정
 variable "backend_ip_addresses" {
-  description = "Application Gateway Backend IP 주소 리스트"
+  description = "Application Gateway Backend IP 주소 리스트 (WAS LoadBalancer External IP)"
   type        = list(string)
-  default     = ["20.214.124.157"]
+  # AKS 배포 후 WAS service의 External IP를 확인하여 설정:
+  # kubectl get svc -n was was-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 }
 
 variable "backend_port" {

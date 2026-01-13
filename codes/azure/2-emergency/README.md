@@ -52,7 +52,7 @@ db_password         = "your-secure-password"
 
 ## 배포 순서
 
-### Step 1: Terraform 배포 (MySQL + AKS)
+### Step 1: Terraform 배포 (MySQL + AKS + Application Gateway)
 ```bash
 terraform init
 terraform plan
@@ -60,6 +60,9 @@ terraform apply
 ```
 
 배포 시간: 약 15-20분
+
+**⚠️ 중요**: Application Gateway backend IP는 초기에는 임시 값입니다.
+AKS 배포 후 WAS LoadBalancer IP로 업데이트해야 합니다.
 
 ### Step 2: MySQL 백업 복구
 ```bash
@@ -95,28 +98,63 @@ kubectl get nodes
 kubectl get namespaces
 ```
 
-### Step 4: PocketBank 배포
+### Step 4: Kubernetes Secret 생성
 ```bash
-cd scripts
-./deploy-pocketbank.sh
+# ⚠️ CRITICAL: Azure MySQL username은 'mysqladmin'입니다 (NOT 'admin')
+kubectl create namespace web
+kubectl create namespace was
 
-# 또는 수동 배포
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/configmap.yaml
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
+# DB credentials secret 생성
+kubectl create secret generic db-credentials \
+  --from-literal=url="jdbc:mysql://mysql-dr-blue.mysql.database.azure.com:3306/petclinic" \
+  --from-literal=username="mysqladmin" \
+  --from-literal=password="byemyblue1!" \
+  --namespace=was
 ```
 
-### Step 5: LoadBalancer IP 확인
+### Step 5: PetClinic 애플리케이션 배포
 ```bash
-# Service 확인
-kubectl get svc -n web
+# Kubernetes manifests 배포
+kubectl apply -f k8s-manifests/web/
+kubectl apply -f k8s-manifests/was/
 
-# LoadBalancer IP 획득 (약 2-3분 소요)
-kubectl get svc web-nginx -n web -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+# Pod 상태 확인 (약 1-2분 소요)
+kubectl get pods -n web
+kubectl get pods -n was
 ```
 
-### Step 6: Route53 업데이트 (도메인이 있는 경우)
+### Step 6: WAS LoadBalancer IP 확인 및 Application Gateway 업데이트
+```bash
+# WAS LoadBalancer External IP 확인 (약 2-3분 소요)
+WAS_LB_IP=$(kubectl get svc -n was was-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+echo "WAS LoadBalancer IP: $WAS_LB_IP"
+
+# Application Gateway backend 업데이트
+az network application-gateway address-pool update \
+  --resource-group rg-dr-blue \
+  --gateway-name appgw-blue \
+  --name aks-backend-pool \
+  --servers $WAS_LB_IP
+
+# Health probe도 업데이트
+az network application-gateway probe update \
+  --resource-group rg-dr-blue \
+  --gateway-name appgw-blue \
+  --name health-probe \
+  --host $WAS_LB_IP
+
+# Application Gateway Public IP 확인
+APPGW_IP=$(az network public-ip show \
+  --resource-group rg-dr-blue \
+  --name pip-appgw-blue \
+  --query ipAddress -o tsv)
+echo "Application Gateway IP: $APPGW_IP"
+
+# 접근 테스트
+curl http://$APPGW_IP/
+```
+
+### Step 7: Front Door 업데이트 (선택사항 - 완전한 DR 구성)
 ```bash
 # LoadBalancer IP 확인
 LB_IP=$(kubectl get svc web-nginx -n web -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
@@ -209,18 +247,49 @@ curl https://example.com
 
 ## 트러블슈팅
 
-### MySQL 접속 실패
+### 1. MySQL 접속 실패 - "Access denied for user 'admin'"
+
+**원인**: Azure MySQL Flexible Server는 관리자 사용자명으로 'mysqladmin'을 사용합니다 (AWS RDS의 'admin'과 다름)
+
+**해결**:
+```bash
+# Kubernetes Secret 재생성 (username을 mysqladmin으로)
+kubectl delete secret db-credentials -n was
+
+kubectl create secret generic db-credentials \
+  --from-literal=url="jdbc:mysql://mysql-dr-blue.mysql.database.azure.com:3306/petclinic" \
+  --from-literal=username="mysqladmin" \
+  --from-literal=password="byemyblue1!" \
+  --namespace=was
+
+# Pod 재시작
+kubectl delete pods -n was --all
+
+# 확인
+kubectl get pods -n was
+kubectl logs -n was -l app=was-spring
+```
+
+### 2. MySQL 방화벽 문제
 ```bash
 # 방화벽 규칙 확인
 az mysql flexible-server firewall-rule list \
-  --resource-group rg-dr-prod \
-  --name mysql-dr-prod
+  --resource-group rg-dr-blue \
+  --name mysql-dr-blue
 
-# 내 IP 추가
+# Azure 서비스 전체 허용
+az mysql flexible-server firewall-rule create \
+  --resource-group rg-dr-blue \
+  --name mysql-dr-blue \
+  --rule-name AllowAllAzureIPs \
+  --start-ip-address 0.0.0.0 \
+  --end-ip-address 0.0.0.0
+
+# 내 IP도 추가 (테스트용)
 MY_IP=$(curl -s ifconfig.me)
 az mysql flexible-server firewall-rule create \
-  --resource-group rg-dr-prod \
-  --name mysql-dr-prod \
+  --resource-group rg-dr-blue \
+  --name mysql-dr-blue \
   --rule-name AllowMyIP \
   --start-ip-address $MY_IP \
   --end-ip-address $MY_IP
@@ -237,16 +306,55 @@ az role assignment list \
   --scope /subscriptions/<subscription-id>/resourceGroups/rg-dr-prod
 ```
 
-### Pod가 시작되지 않음
+### 3. Application Gateway 502 Bad Gateway
+
+**원인**: Application Gateway backend IP가 잘못된 IP를 가리킴 (WAS LoadBalancer IP가 아닌 초기 하드코딩된 값)
+
+**해결**:
+```bash
+# 1. WAS LoadBalancer External IP 확인
+kubectl get svc -n was was-service
+
+# 2. Application Gateway backend 업데이트
+WAS_LB_IP=$(kubectl get svc -n was was-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+az network application-gateway address-pool update \
+  --resource-group rg-dr-blue \
+  --gateway-name appgw-blue \
+  --name aks-backend-pool \
+  --servers $WAS_LB_IP
+
+# 3. Health probe도 업데이트
+az network application-gateway probe update \
+  --resource-group rg-dr-blue \
+  --gateway-name appgw-blue \
+  --name health-probe \
+  --host $WAS_LB_IP
+
+# 4. Backend health 확인
+az network application-gateway show-backend-health \
+  --resource-group rg-dr-blue \
+  --name appgw-blue
+```
+
+### 4. Pod가 시작되지 않음 (CrashLoopBackOff)
 ```bash
 # Pod 상세 정보
 kubectl describe pod <pod-name> -n <namespace>
 
-# Log 확인
+# Log 확인 (현재 컨테이너)
 kubectl logs <pod-name> -n <namespace>
+
+# Log 확인 (이전 컨테이너 - 재시작 후)
+kubectl logs <pod-name> -n <namespace> --previous
 
 # 이벤트 확인
 kubectl get events -n <namespace> --sort-by='.lastTimestamp'
+
+# 일반적인 원인:
+# - MySQL 연결 실패 (username/password 확인)
+# - DB Secret이 없음 (kubectl get secret -n was)
+# - 이미지를 pull할 수 없음 (imagePullPolicy 확인)
 ```
 
 ## 복구 (Failback)

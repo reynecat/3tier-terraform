@@ -21,9 +21,9 @@ variable "appgw_subnet_id" {
 }
 
 variable "backend_ip_addresses" {
-  description = "Backend IP 주소 리스트"
+  description = "Backend IP 주소 리스트 (WAS LoadBalancer External IP)"
   type        = list(string)
-  default     = ["20.214.124.157"]
+  # default 제거 - 반드시 terraform.tfvars에서 지정해야 함
 }
 
 variable "backend_port" {
