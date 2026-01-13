@@ -20,7 +20,23 @@ environment = "prod"
 
 # AKS 설정 (선택사항 - 기본값 사용 가능)
 # kubernetes_version = "1.28"
-# node_count         = 2
-# node_min_count     = 2
-# node_max_count     = 5
+# web_node_count     = 2
+# web_node_min_count = 2
+# web_node_max_count = 5
+# was_node_count     = 2
+# was_node_min_count = 2
+# was_node_max_count = 5
 # node_vm_size       = "Standard_D2s_v3"
+
+# ⚠️ CRITICAL: Application Gateway Backend IP (필수)
+# AKS 배포 후 WAS LoadBalancer External IP를 확인하여 설정해야 합니다:
+# kubectl get svc -n was was-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+backend_ip_addresses = ["REPLACE_WITH_WAS_LOADBALANCER_IP"]
+
+# Tags
+tags = {
+  Environment = "Production"
+  DRPlan      = "Backup-and-Restore"
+  Phase       = "Full-Failover"
+  ManagedBy   = "Terraform"
+}

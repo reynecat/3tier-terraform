@@ -2,7 +2,7 @@
 
 **AWS (Primary) ↔ Azure (Secondary DR)**
 
-엔터프라이즈급 3-tier 웹 애플리케이션을 위한 Multi-Cloud 재해 복구(DR) 솔루션입니다. Infrastructure as Code(Terraform)를 활용하여 AWS 장애 시 Azure로 자동 전환되는 고가용성 아키텍처를 구현했습니다.
+엔터프라이즈급 3-tier 웹 애플리케이션을 위한 Multi-Cloud 재해 복구(DR) 솔루션입니다. Infrastructure as Code(Terraform)를 활용하여 AWS 장애 시 Azure로 전환되는 고가용성 아키텍처를 구현했습니다.
 
 ---
 
@@ -10,8 +10,8 @@
 
 - **고가용성(HA)**: 단일 클라우드 장애에도 서비스 지속
 - **자동화**: Terraform을 통한 인프라 코드화 및 재현 가능한 배포
-- **비용 최적화**: Pilot Light 패턴으로 DR 사이트 대기 비용 최소화
-- **실전 적용**: 실제 Spring PocketBank 애플리케이션 기반 검증
+- **비용 최적화**: Backup & Restore 패턴으로 DR 사이트 대기 비용 최소화
+- **실전 적용**: 실제 Spring PetClinic 애플리케이션 기반 검증
 
 ---
 
@@ -44,9 +44,9 @@
 - **Storage**: Blob Storage (백업 수신)
 
 #### Application
-- **Spring PocketBank**: Spring Boot 3.x 기반 금융 데모 애플리케이션
-  - WAS: `cloud039/pocketbank-was:latest` (Spring Boot + Actuator)
-  - Web: `cloud039/pocketbank-web:latest` (Nginx reverse proxy)
+- **Spring PetClinic**: Spring Boot 3.x 기반 동물병원 관리 애플리케이션
+  - WAS: `cloud039/petclinic-was:v3` (Spring Boot + MySQL)
+  - Web: `cloud039/petclinic-web:v1` (Nginx reverse proxy)
 - **Container**: Docker + Kubernetes Deployment
 
 ---
@@ -57,20 +57,21 @@
 3tier-terraform/
 ├── codes/
 │   ├── aws/
-│   │   ├── service/          # AWS 인프라 (VPC, EKS, RDS, Backup)
-│   │   ├── route53/          # DNS 및 CloudFront Failover
-│   │   └── monitoring/       # CloudWatch 알람, 대시보드, 자동 복구 Lambda
+│   │   ├── 1. route53/       # DNS 및 CloudFront Failover
+│   │   ├── 2. service/       # AWS 인프라 (VPC, EKS, RDS, Backup)
+│   │   ├── 3. monitoring/    # CloudWatch 알람, 대시보드, 자동 복구 Lambda
+│   │   └── 4-cicd/          # CI/CD (GitHub Actions, Keptn)
 │   └── azure/
 │       ├── 1-always/         # 상시 대기 리소스 (Storage, VNet, 점검 페이지)
-│       └── 2-failover/       # 재해 복구 리소스 (MySQL, AKS, App Gateway)
+│       └── 2-emergency/      # 재해 복구 리소스 (MySQL, AKS, App Gateway)
 ├── docs/
-│   ├── aws-infrastructure.md     # AWS 인프라 상세 가이드 (신규)
-│   ├── azure-infrastructure.md   # Azure 인프라 상세 가이드 (신규)
-│   ├── architecture.md           # 전체 시스템 아키텍처
-│   ├── user-guide.md             # 사용자 배포 가이드
-│   ├── backup-system.md          # 백업 시스템 가이드
+│   ├── PORTFOLIO_REPORT.md       # 전체 프로젝트 포트폴리오 보고서
+│   ├── deployment-guide.md       # 배포 가이드
 │   ├── troubleshooting.md        # 트러블슈팅
-│   └── dr-failover-procedure.md  # DR 절차서
+│   ├── dr-failover-procedure.md  # DR 절차서
+│   ├── DR_TEST_GUIDE.md          # DR 테스트 가이드
+│   ├── DESTROY_GUIDE.md          # 인프라 삭제 가이드
+│   └── route53-health-check-guide.md  # Route53 헬스체크 가이드
 └── README.md
 ```
 
@@ -78,20 +79,21 @@
 
 | 디렉토리 | 설명 | 관련 문서 |
 |----------|------|-----------|
-| `codes/aws/service/` | VPC, EKS, RDS, 백업 인스턴스 - AWS Primary Site 핵심 인프라 | [aws-infrastructure.md](docs/aws-infrastructure.md) |
-| `codes/aws/route53/` | CloudFront Origin Failover, Route53 DNS 관리 | [aws-infrastructure.md](docs/aws-infrastructure.md#codesawsroute53---dns-및-failover) |
-| `codes/aws/monitoring/` | CloudWatch 알람 (20+), 대시보드, 자동 복구 Lambda | [aws-infrastructure.md](docs/aws-infrastructure.md#codesawsmonitoring---모니터링-및-자동-복구) |
-| `codes/azure/1-always/` | 상시 대기 (~$5/월): VNet, Storage, 점검 페이지 | [azure-infrastructure.md](docs/azure-infrastructure.md#codesazure1-always---상시-대기-리소스) |
-| `codes/azure/2-emergency/` | 긴급 복구 시 배포: MySQL, AKS, Application Gateway, PocketBank 매니페스트 | [azure-infrastructure.md](docs/azure-infrastructure.md#codesazure2-emergency---재해-복구-리소스) |
+| `codes/aws/1. route53/` | CloudFront Origin Failover, Route53 DNS 관리 | [route53-health-check-guide.md](docs/route53-health-check-guide.md) |
+| `codes/aws/2. service/` | VPC, EKS, RDS, 백업 인스턴스 - AWS Primary Site 핵심 인프라 | [deployment-guide.md](docs/deployment-guide.md) |
+| `codes/aws/3. monitoring/` | CloudWatch 알람 (20+), 대시보드, 자동 복구 Lambda | [PORTFOLIO_REPORT.md](docs/PORTFOLIO_REPORT.md) |
+| `codes/aws/4-cicd/` | GitHub Actions, Keptn 기반 CI/CD 파이프라인 | [README.md](codes/aws/4-cicd/README.md) |
+| `codes/azure/1-always/` | 상시 대기 (~$5/월): VNet, Storage, 점검 페이지 | [README.md](codes/azure/1-always/README.md) |
+| `codes/azure/2-emergency/` | 긴급 복구 시 배포: MySQL, AKS, Application Gateway, PetClinic 매니페스트 | [README.md](codes/azure/2-emergency/README.md) |
 
 ---
 
 ## 🚀 핵심 기능
 
-### 1. **Pilot Light DR 패턴**
-- **평상시**: Azure에 최소 리소스만 유지 (Storage, VNet)
-- **장애 시**: 15-20분 내 전체 인프라 자동 배포
-- **비용 효율**: 대기 비용 ~$10/월, 복구 시에만 전체 비용 발생
+### 1. **Backup & Restore DR 패턴**
+- **평상시**: Azure에 최소 리소스만 유지 (Storage, VNet, 점검 페이지)
+- **장애 시**: 15-20분 내 전체 인프라 배포 및 백업 복구
+- **비용 효율**: 대기 비용 ~$5/월, 복구 시에만 전체 비용 발생
 
 ### 2. **자동 백업 시스템**
 ```
@@ -103,8 +105,9 @@ AWS RDS → EC2 Backup Instance → Azure Blob Storage
 - Blob Lifecycle Policy로 자동 정리
 
 ### 3. **Multi-Cloud Failover**
-- **CloudFront Origin Failover**: Primary(AWS) 장애 시 Secondary(Azure)로 수동 전환
-- **Application Gateway**: Azure AKS → PocketBank 서비스 프록시
+- **CloudFront Origin Failover**: Primary(AWS) 장애 시 Secondary(Azure 점검 페이지)로 자동 전환
+- **수동 DR**: Azure 2-emergency 배포 후 CloudFront origin 업데이트
+- **Application Gateway**: Azure AKS → PetClinic 서비스 프록시
 - **SSL/TLS**: AppGwSslPolicy20220101 (TLS 1.2+)
 
 ### 4. **Infrastructure as Code**
@@ -115,9 +118,9 @@ terraform init
 terraform apply
 # → 15-20분 내 MySQL, AKS, App Gateway 자동 생성
 
-# PocketBank 애플리케이션 배포
+# PetClinic 애플리케이션 배포
 cd scripts
-./deploy-pocketbank.sh
+./deploy-complete.sh
 # → 5-10분 내 WAS/Web Pod 배포 및 LoadBalancer 설정
 ```
 
@@ -130,13 +133,14 @@ cd scripts
 
 ## 🔑 핵심 기술 결정 사항
 
-### 1. CloudFront vs Route53 Failover
-- **선택**: CloudFront Origin Failover
-- **이유**:
+### 1. CloudFront Origin Failover
+- **1단계 Failover**: AWS 장애 시 Azure 점검 페이지로 자동 전환
+- **2단계 DR**: Azure 2-emergency 배포 후 CloudFront origin 수동 업데이트
+- **장점**:
   - HTTPS 종단점 제공
   - 전 세계 엣지 캐싱으로 성능 향상
-  - Origin Group 제거로 모든 HTTP 메서드 지원 (POST, PUT, DELETE)
-- **트레이드오프**: 자동 failover 불가, 수동 전환 필요
+  - 1단계는 자동 failover (점검 페이지)
+- **트레이드오프**: 완전한 서비스 복구는 수동 작업 필요
 
 ### 2. Kubernetes 기반 배포
 - **선택**: EKS(AWS) + AKS(Azure)
@@ -168,14 +172,16 @@ cd scripts
 | 단계 | 작업 | 소요 시간 | 상태 |
 |------|------|-----------|------|
 | T+0  | AWS 장애 감지 | - | 🔴 서비스 중단 |
+| T+0  | CloudFront 자동 failover → Azure 점검 페이지 | 즉시 | 🟡 점검 중 |
 | T+1  | 담당자 Azure 2-emergency 리소스 배포 시작 | 1분 | 🟡 복구 중 |
 | T+15 | MySQL + AKS + App Gateway 프로비저닝 완료 | 14분 | 🟡 복구 중 |
-| T+20 | PocketBank 애플리케이션 배포 완료 | 5분 | 🟡 복구 중 |
-| T+21 | CloudFront origin을 Azure로 수동 전환 | 1분 | 🟢 Azure로 서비스 |
+| T+20 | PetClinic 애플리케이션 배포 완료 | 5분 | 🟡 복구 중 |
+| T+21 | CloudFront origin을 Azure App Gateway로 수동 전환 | 1분 | 🟢 Azure로 서비스 |
 | 합계 | | **21분** | ✅ 복구 완료 |
 
-**RTO (Recovery Time Objective)**: 21분 (Pilot Light 패턴)
+**RTO (Recovery Time Objective)**: 21분 (Backup & Restore 패턴)
 **RPO (Recovery Point Objective)**: 24시간 (마지막 백업 기준)
+**Failover to Maintenance Page**: 즉시 (자동)
 
 ---
 
@@ -227,44 +233,33 @@ curl -I https://blueisthenewblack.store/
 
 ## 🔧 개선 계획
 
-### 단기 (1개월)
-- [ ] Application Gateway Backend IP 동적 조회 (Terraform data source)
-- [ ] 자동 failover 스크립트 (Python + AWS CLI)
-- [ ] CI/CD 파이프라인 (GitHub Actions)
+### 완료된 기능
+- [✅] CloudFront Origin Failover (점검 페이지 자동 전환)
+- [✅] CI/CD 파이프라인 (GitHub Actions + Keptn)
+- [✅] Azure 2-emergency 자동 배포 스크립트
+- [✅] MySQL username 검증 로직 추가
 
-### 중기 (3개월)
+### 개선 계획
+- [ ] Application Gateway Backend IP 동적 조회 (Terraform data source)
 - [ ] Azure Front Door 도입 (WAF, DDoS 보호)
 - [ ] Prometheus + Grafana 모니터링
 - [ ] 실시간 데이터베이스 복제 (AWS DMS)
-
-### 장기 (6개월)
-- [ ] Multi-region DR (AWS us-east-1 추가)
-- [ ] Chaos Engineering 테스트 (Chaos Monkey)
-- [ ] 완전 자동화된 DR 전환
 
 ---
 
 ## 📚 문서
 
-### 인프라 가이드
-- **[AWS 인프라 가이드](docs/aws-infrastructure.md)**: VPC, EKS, RDS 모듈 설계 철학, 서비스 플로우, 리소스 의존성
-- **[Azure 인프라 가이드](docs/azure-infrastructure.md)**: Pilot Light 3단계 전략, 1-always/2-emergency 구성, 비용 분석
-- **[PocketBank 구축 리포트](docs/POCKETBANK_REPORT.md)**: PocketBank 애플리케이션 기반 멀티클라우드 DR 솔루션 설계 상세 문서
-
-### 아키텍처 및 배포
-- **[전체 아키텍처](docs/architecture.md)**: 시스템 아키텍처 개요, 네트워크 토폴로지, 데이터 흐름
-- **[사용자 가이드](docs/user-guide.md)**: 처음부터 끝까지 배포 방법 (단계별 안내)
-
-### 운영 및 장애 대응
-- **[백업 시스템](docs/backup-system.md)**: AWS RDS → Azure Blob 백업 구성
-- **[모니터링](docs/MONITORING.md)**: CloudWatch 알람, 대시보드, 자동 복구 설정
-- **[모니터링 설정 가이드](docs/MONITORING_SETUP_GUIDE.md)**: CloudWatch 모니터링 상세 설정 가이드
+### 핵심 문서
+- **[포트폴리오 보고서](docs/PORTFOLIO_REPORT.md)**: 전체 프로젝트 개요 및 설계 철학
+- **[배포 가이드](docs/deployment-guide.md)**: AWS 및 Azure 인프라 배포 가이드
 - **[DR 절차서](docs/dr-failover-procedure.md)**: 재해 복구 체크리스트
-- **[DR 테스트 가이드](docs/dr-failover-testing-guide.md)**: 재해 복구 시뮬레이션 테스트 가이드
-- **[트러블슈팅](docs/troubleshooting.md)**: 문제 해결 방법 (8개 섹션)
+- **[트러블슈팅](docs/troubleshooting.md)**: 문제 해결 가이드
 
-### CI/CD
-- **[CI/CD 가이드](docs/CICD_GUIDE.md)**: GitHub Actions, Jenkins, ArgoCD 설정 가이드
+### 세부 문서
+- **[DR 테스트 가이드](docs/DR_TEST_GUIDE.md)**: 재해 복구 시뮬레이션 테스트
+- **[인프라 삭제 가이드](docs/DESTROY_GUIDE.md)**: Terraform destroy 순서
+- **[Route53 헬스체크 가이드](docs/route53-health-check-guide.md)**: CloudFront failover 설정
+- **[Failover 구성](docs/FAILOVER_CONFIGURATION.md)**: Failover 상세 설정
 
 ---
 
