@@ -311,22 +311,24 @@ curl -I https://blueisthenewblack.store/
 
 ### 배포 구성
 - **Container Registry**: DockerHub (cloud039)
-- **WAS Image**: `cloud039/pocketbank-was:latest`
-- **Web Image**: `cloud039/pocketbank-web:latest`
+- **WAS Image**: `cloud039/petclinic-was:v3`
+- **Web Image**: `cloud039/petclinic-web:v1`
 - **EKS Cluster**: blue-eks (Kubernetes 1.34)
-- **Database**: RDS MySQL Multi-AZ
-- **Auto-Scaling**: Web (2 pods), WAS (2 pods)
+- **AKS Cluster**: aks-dr-blue (Kubernetes 1.34)
+- **Database**: RDS MySQL Multi-AZ (Primary), Azure MySQL Flexible Server (DR)
+- **Auto-Scaling**: AWS Web (2 pods), WAS (1 pod) / Azure Web (1 pod), WAS (1 pod)
 
 ### 최근 변경사항
-- 2025-12-28: ECR/ACR → DockerHub 마이그레이션 완료
-- 2025-12-28: CloudFront DefaultCacheBehavior 수정 (secondary-azure → primary-aws-alb)
-- 2025-12-28: Spring PetClinic → PocketBank 애플리케이션 전환
+- 2026-01-13: Azure 2-emergency 배포 및 DR 테스트 완료
+- 2026-01-13: MySQL username 검증 로직 추가 (mysqladmin 강제)
+- 2026-01-13: Application Gateway backend IP 동적 업데이트 스크립트 추가
+- 2026-01-12: DR 전략 Pilot Light → Backup & Restore로 명확화
 
 ---
 
-**문서 버전**: v2.2
-**최종 수정**: 2025-12-28
+**문서 버전**: v2.3
+**최종 수정**: 2026-01-13
 **작성자**: I2ST-blue
 
 **프로젝트 데모**: https://blueisthenewblack.store
-**애플리케이션**: Spring Boot PocketBank (금융 데모 애플리케이션)
+**애플리케이션**: Spring Boot PetClinic v3.0 (동물병원 관리 애플리케이션)

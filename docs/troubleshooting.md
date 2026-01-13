@@ -2758,6 +2758,416 @@ curl -I https://blueisthenewblack.store/
 
 ---
 
-**문서 버전**: v1.6
-**최종 수정**: 2025-12-28
+## 11. Azure 2-emergency 배포 관련 문제
+
+### 11.1 Azure MySQL 인증 실패 - "Access denied for user 'admin'"
+
+#### 증상
+WAS Pod가 CrashLoopBackOff 상태로 계속 재시작됨
+```bash
+kubectl get pods -n was
+# NAME                          READY   STATUS             RESTARTS   AGE
+# was-spring-xxxxx              0/1     CrashLoopBackOff   5          5m
+```
+
+로그 확인:
+```bash
+kubectl logs -n was -l app=was-spring
+# java.sql.SQLException: Access denied for user 'admin'@'20.249.156.8' (using password: YES)
+# Caused by: java.sql.SQLException: Access denied for user 'admin'@'20.249.156.8'
+```
+
+#### 원인
+**Azure MySQL Flexible Server는 관리자 사용자명으로 'mysqladmin'을 사용합니다** (AWS RDS의 'admin'과 다름)
+
+Terraform으로 MySQL을 생성할 때 `administrator_login = "mysqladmin"` 으로 설정되지만,
+Kubernetes Secret 생성 시 AWS 습관대로 `username=admin`으로 설정하여 인증 실패 발생
+
+#### 해결방법
+
+**1. Azure MySQL 사용자명 확인**
+```bash
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
+
+# Terraform output으로 확인
+terraform output -json | jq -r '.db_username.value'
+# "mysqladmin"
+
+# 또는 Azure CLI로 확인
+az mysql flexible-server show \
+  --resource-group rg-dr-blue \
+  --name mysql-dr-blue \
+  --query administratorLogin -o tsv
+# mysqladmin
+```
+
+**2. Kubernetes Secret 재생성 (올바른 username 사용)**
+```bash
+# 기존 Secret 삭제
+kubectl delete secret db-credentials -n was
+
+# 올바른 username으로 재생성
+kubectl create secret generic db-credentials \
+  --from-literal=url="jdbc:mysql://mysql-dr-blue.mysql.database.azure.com:3306/petclinic" \
+  --from-literal=username="mysqladmin" \
+  --from-literal=password="byemyblue1!" \
+  --namespace=was
+
+# 확인
+kubectl get secret db-credentials -n was -o jsonpath='{.data.username}' | base64 -d
+# mysqladmin
+```
+
+**3. Pod 재시작**
+```bash
+kubectl delete pods -n was --all
+
+# 상태 확인 (30초 후)
+kubectl get pods -n was
+# NAME                          READY   STATUS    RESTARTS   AGE
+# was-spring-xxxxx              1/1     Running   0          45s
+
+# 로그 확인
+kubectl logs -n was -l app=was-spring | grep -i "started"
+# Started PetClinicApplication in 45.2 seconds
+```
+
+#### 예방 조치
+
+**Terraform validation 추가** ([codes/azure/2-emergency/variables.tf](../codes/azure/2-emergency/variables.tf:52-55)):
+```hcl
+variable "db_username" {
+  description = "MySQL 관리자 사용자명 (Azure MySQL Flexible Server는 'mysqladmin' 사용)"
+  type        = string
+  default     = "mysqladmin"
+  sensitive   = true
+
+  validation {
+    condition     = var.db_username == "mysqladmin"
+    error_message = "Azure MySQL Flexible Server는 관리자 사용자명으로 'mysqladmin'을 사용해야 합니다. K8s Secret 생성 시 동일한 사용자명을 사용하세요."
+  }
+}
+```
+
+**자동 배포 스크립트 사용** ([codes/azure/2-emergency/scripts/deploy-complete.sh](../codes/azure/2-emergency/scripts/deploy-complete.sh)):
+```bash
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
+./scripts/deploy-complete.sh
+# ✓ Database Secret 생성 완료 (username: mysqladmin)
+```
+
+---
+
+### 11.2 Application Gateway 502 Bad Gateway
+
+#### 증상
+WAS Pod는 정상 Running이지만 Application Gateway를 통한 접속 시 502 에러 발생
+```bash
+# WAS Pod 확인
+kubectl get pods -n was
+# NAME                          READY   STATUS    RESTARTS   AGE
+# was-spring-xxxxx              1/1     Running   0          5m
+
+# Application Gateway로 접속 시도
+APPGW_IP=$(az network public-ip show \
+  --resource-group rg-dr-blue \
+  --name pip-appgw-blue \
+  --query ipAddress -o tsv)
+
+curl -I http://$APPGW_IP/
+# HTTP/1.1 502 Bad Gateway
+```
+
+#### 원인
+Application Gateway의 backend pool이 **하드코딩된 잘못된 IP**를 가리키고 있음
+
+실제 WAS LoadBalancer IP: `4.230.96.174`
+Application Gateway backend IP: `20.214.124.157` (terraform.tfvars의 초기 하드코딩 값)
+
+#### 진단 과정
+
+**1. WAS Service 확인**
+```bash
+kubectl get svc -n was was-service
+# NAME          TYPE           CLUSTER-IP     EXTERNAL-IP     PORT(S)          AGE
+# was-service   LoadBalancer   10.0.123.45    4.230.96.174    8080:30123/TCP   10m
+```
+
+**2. Application Gateway Backend 확인**
+```bash
+az network application-gateway address-pool show \
+  --resource-group rg-dr-blue \
+  --gateway-name appgw-blue \
+  --name aks-backend-pool \
+  --query backendAddresses
+# [
+#   {
+#     "ipAddress": "20.214.124.157"
+#   }
+# ]
+```
+
+**3. Backend Health 확인**
+```bash
+az network application-gateway show-backend-health \
+  --resource-group rg-dr-blue \
+  --name appgw-blue
+# "backendHttpSettingsCollection": [{
+#   "backendAddressPool": {
+#     "backendIpConfigurations": [{
+#       "health": "Unhealthy",
+#       "healthProbeLog": "Connection timeout"
+#     }]
+#   }
+# }]
+```
+
+#### 해결방법
+
+**1. WAS LoadBalancer External IP 확인**
+```bash
+WAS_LB_IP=$(kubectl get svc -n was was-service \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+echo "WAS LoadBalancer IP: $WAS_LB_IP"
+# WAS LoadBalancer IP: 4.230.96.174
+```
+
+**2. Application Gateway backend pool 업데이트**
+```bash
+az network application-gateway address-pool update \
+  --resource-group rg-dr-blue \
+  --gateway-name appgw-blue \
+  --name aks-backend-pool \
+  --servers $WAS_LB_IP
+```
+
+**3. Health probe도 업데이트**
+```bash
+az network application-gateway probe update \
+  --resource-group rg-dr-blue \
+  --gateway-name appgw-blue \
+  --name health-probe \
+  --host $WAS_LB_IP
+```
+
+**4. Backend health 재확인 (2-3분 소요)**
+```bash
+az network application-gateway show-backend-health \
+  --resource-group rg-dr-blue \
+  --name appgw-blue \
+  --query 'backendAddressPools[0].backendHttpSettingsCollection[0].servers[0].health'
+# "Healthy"
+```
+
+**5. 접속 테스트**
+```bash
+curl -I http://$APPGW_IP/
+# HTTP/1.1 200 OK
+# Content-Type: text/html;charset=UTF-8
+
+curl http://$APPGW_IP/ | grep -o "PetClinic.*v[0-9.]*"
+# PetClinic v3.0
+```
+
+#### 예방 조치
+
+**1. Terraform variables에서 default 제거** ([codes/azure/2-emergency/variables.tf](../codes/azure/2-emergency/variables.tf:123-128)):
+```hcl
+variable "backend_ip_addresses" {
+  description = "Application Gateway Backend IP 주소 리스트 (WAS LoadBalancer External IP)"
+  type        = list(string)
+  # AKS 배포 후 WAS service의 External IP를 확인하여 설정:
+  # kubectl get svc -n was was-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+}
+```
+
+**2. terraform.tfvars.example 업데이트**:
+```hcl
+# ⚠️ CRITICAL: Application Gateway Backend IP (필수)
+# AKS 배포 후 WAS LoadBalancer External IP를 확인하여 설정해야 합니다:
+# kubectl get svc -n was was-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+backend_ip_addresses = ["REPLACE_WITH_WAS_LOADBALANCER_IP"]
+```
+
+**3. 자동 업데이트 스크립트 사용**:
+```bash
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
+./scripts/deploy-complete.sh
+# [6/7] WAS LoadBalancer IP 확인 및 Application Gateway 업데이트...
+# ✓ WAS LoadBalancer IP: 4.230.96.174
+# ✓ Application Gateway 업데이트 완료
+```
+
+---
+
+### 11.3 Azure 2-emergency 완전 배포 플로우
+
+#### 성공적인 배포 순서
+
+**1. Terraform 인프라 배포 (15-20분)**
+```bash
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
+terraform init
+terraform plan
+terraform apply
+# Apply complete! Resources: 8 added, 0 changed, 0 destroyed.
+```
+
+**2. AKS credentials 설정**
+```bash
+RESOURCE_GROUP=$(terraform output -raw resource_group_name)
+AKS_NAME=$(terraform output -raw aks_cluster_name)
+
+az aks get-credentials \
+  --resource-group "$RESOURCE_GROUP" \
+  --name "$AKS_NAME" \
+  --overwrite-existing
+
+kubectl get nodes
+# NAME                                STATUS   ROLES   AGE   VERSION
+# aks-web-xxxxx-vmss000000           Ready    agent   5m    v1.34.x
+# aks-was-xxxxx-vmss000000           Ready    agent   5m    v1.34.x
+```
+
+**3. Kubernetes Namespaces 생성**
+```bash
+kubectl create namespace web --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace was --dry-run=client -o yaml | kubectl apply -f -
+```
+
+**4. Database Secret 생성 (⚠️ CRITICAL: username은 mysqladmin)**
+```bash
+MYSQL_FQDN=$(terraform output -raw mysql_fqdn)
+DB_PASSWORD=$(terraform output -json | jq -r '.db_password.value')
+
+kubectl create secret generic db-credentials \
+  --from-literal=url="jdbc:mysql://${MYSQL_FQDN}:3306/petclinic" \
+  --from-literal=username="mysqladmin" \
+  --from-literal=password="${DB_PASSWORD}" \
+  --namespace=was \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+**5. PetClinic 애플리케이션 배포**
+```bash
+kubectl apply -f k8s-manifests/web/
+kubectl apply -f k8s-manifests/was/
+
+# Pod 시작 대기 (60초)
+sleep 60
+
+kubectl get pods -n web
+kubectl get pods -n was
+```
+
+**6. WAS LoadBalancer IP 확인 및 Application Gateway 업데이트**
+```bash
+# LoadBalancer IP 할당 대기 (최대 3분)
+for i in {1..36}; do
+    WAS_LB_IP=$(kubectl get svc -n was was-service \
+      -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+    if [ -n "$WAS_LB_IP" ]; then
+        echo "✓ WAS LoadBalancer IP: $WAS_LB_IP"
+        break
+    fi
+    echo -n "."
+    sleep 5
+done
+
+# Application Gateway backend 업데이트
+az network application-gateway address-pool update \
+  --resource-group "$RESOURCE_GROUP" \
+  --gateway-name appgw-blue \
+  --name aks-backend-pool \
+  --servers "$WAS_LB_IP"
+
+# Health probe 업데이트
+az network application-gateway probe update \
+  --resource-group "$RESOURCE_GROUP" \
+  --gateway-name appgw-blue \
+  --name health-probe \
+  --host "$WAS_LB_IP"
+```
+
+**7. 배포 확인**
+```bash
+# Application Gateway Public IP 확인
+APPGW_IP=$(az network public-ip show \
+  --resource-group "$RESOURCE_GROUP" \
+  --name pip-appgw-blue \
+  --query ipAddress -o tsv)
+
+echo "Application Gateway IP: $APPGW_IP"
+echo "WAS LoadBalancer IP: $WAS_LB_IP"
+
+# 접근 테스트
+curl http://$APPGW_IP/
+# 🎯 Multi-Cloud DR Project - v3.0 Production Ready
+
+# Pod 상태 확인
+kubectl get pods -n web
+kubectl get pods -n was
+
+# 로그 확인
+kubectl logs -n was -l app=was-spring | tail -20
+```
+
+#### 자동 배포 스크립트
+
+위 모든 과정을 자동화한 스크립트 사용:
+```bash
+cd /home/ubuntu/3tier-terraform/codes/azure/2-emergency
+chmod +x scripts/deploy-complete.sh
+./scripts/deploy-complete.sh
+
+# =========================================
+# Azure DR 2-emergency 완전 배포 시작
+# =========================================
+# [1/7] Terraform 리소스 확인...
+# ✓ Terraform 리소스 확인 완료
+# [2/7] AKS credentials 설정...
+# ✓ AKS credentials 설정 완료
+# [3/7] Kubernetes Namespaces 생성...
+# ✓ Namespaces 생성 완료
+# [4/7] Database Secret 생성...
+# ✓ Database Secret 생성 완료 (username: mysqladmin)
+# [5/7] PetClinic 애플리케이션 배포...
+# ✓ 애플리케이션 배포 완료
+# [6/7] WAS LoadBalancer IP 확인 및 Application Gateway 업데이트...
+# ✓ WAS LoadBalancer IP: 4.230.96.174
+# ✓ Application Gateway 업데이트 완료
+# [7/7] 배포 확인...
+# =========================================
+# 배포 완료!
+# =========================================
+```
+
+---
+
+### 11.4 Azure vs AWS 주요 차이점
+
+#### MySQL 관리자 사용자명
+| 클라우드 | 사용자명 | 설정 방법 |
+|---------|---------|----------|
+| AWS RDS | `admin` | `username = "admin"` (기본값) |
+| Azure MySQL Flexible Server | `mysqladmin` | `administrator_login = "mysqladmin"` |
+
+#### Load Balancer 동작
+| 항목 | AWS (ALB) | Azure (Application Gateway) |
+|------|-----------|----------------------------|
+| 생성 방식 | Ingress Controller가 자동 생성 | Terraform으로 사전 생성 필요 |
+| Backend | Target Group (자동 등록) | Backend Pool (수동 IP 등록 필요) |
+| Health Check | Target Group 자동 설정 | Health Probe 별도 설정 |
+| IP 업데이트 | 불필요 (자동 동기화) | 필요 (LoadBalancer IP 할당 후 수동 업데이트) |
+
+#### Kubernetes Service Type
+| 클라우드 | WAS Service Type | 이유 |
+|---------|-----------------|------|
+| AWS | ClusterIP | ALB Ingress가 ClusterIP로 라우팅 |
+| Azure | LoadBalancer | Application Gateway가 외부 IP 필요 |
+
+---
+
+**문서 버전**: v1.7
+**최종 수정**: 2026-01-13
 **작성자**: I2ST-blue
